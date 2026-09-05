@@ -1,0 +1,143 @@
+[
+  {
+    "legacyId": 22,
+    "clientId": 12,
+    "name": "Wael Idriss",
+    "balance": 0,
+    "reason": "Landlord, and the account was being used as a private ledger between him and the clinic. The clinic pays for shared things in the building and he reimbursed it by paying extra on each of his own invoices: 65 against every 35 billed, a steady 30 a month that was never pet care. That is the whole of the 215. His credit note of 185 is also the SAME 185 as his opening balance in the old file, one event recorded twice, so neither is posted. The clinic confirmed on 2026-09-05 that nothing is owed either way and the 215 is posted as a single Account settlement charge on that date. Going forward the clinic was told to stop settling building costs through his invoices and to raise them as running costs, so this account should behave like any other from the cutover on.",
+    "settlement": {
+      "date": "2026-09-05",
+      "amount": 215,
+      "description": "Account settlement"
+    }
+  },
+  {
+    "legacyId": 46,
+    "clientId": 34,
+    "name": "Bahaa Matar",
+    "balance": 130,
+    "reason": "Opening balance 100, invoiced 105, credit note 40, paid 35. Both the opening balance and the credit note are in the old file; curation dropped the first and never posted the second.",
+    "creditNote": {
+      "legacyId": 9,
+      "date": "2026-08-01",
+      "amount": 40,
+      "purpose": null
+    },
+    "openingBalance": 100
+  },
+  {
+    "legacyId": 112,
+    "clientId": 78,
+    "name": "Bassel Mohtar",
+    "balance": 0,
+    "reason": "A credit note of 25 settles the account exactly. It was never posted to an invoice.",
+    "creditNote": {
+      "legacyId": 10,
+      "date": "2026-08-01",
+      "amount": 25,
+      "purpose": null
+    }
+  },
+  {
+    "legacyId": 177,
+    "clientId": 129,
+    "name": "Rania Milou",
+    "balance": 0,
+    "reason": "The old balance was a rounding artefact of 0.01 on an account with no documents at all."
+  },
+  {
+    "legacyId": 302,
+    "clientId": 225,
+    "name": "Samer Azzam",
+    "balance": 80,
+    "reason": "Invoiced 1,727 against 1,617 paid, less a credit note of 30 that never reached an invoice.",
+    "creditNote": {
+      "legacyId": 8,
+      "date": "2026-04-15",
+      "amount": 30,
+      "purpose": null
+    }
+  },
+  {
+    "legacyId": 333,
+    "clientId": 253,
+    "name": "Amin Bou Ghannem",
+    "balance": 10,
+    "reason": "A credit note of 10 takes the 20 the documents show down to 10.",
+    "creditNote": {
+      "legacyId": 5,
+      "date": "2026-03-25",
+      "amount": 10,
+      "purpose": null
+    }
+  },
+  {
+    "legacyId": 361,
+    "clientId": 279,
+    "name": "Rodaina Yehia",
+    "balance": 0,
+    "reason": "Settled. The 0.08 the documents leave is rounding across 1,243 of billing."
+  },
+  {
+    "legacyId": 1000,
+    "clientId": 897,
+    "name": "Marita Malaeb",
+    "balance": 0,
+    "reason": "Settled. The documents show 10 overpaid and the clinic is not carrying it as credit."
+  },
+  {
+    "legacyId": 1059,
+    "clientId": 947,
+    "name": "Banessa Al Aayach",
+    "balance": 0,
+    "reason": "Settled. The documents show 9 overpaid and the clinic is not carrying it as credit."
+  },
+  {
+    "legacyId": 1092,
+    "clientId": 980,
+    "name": "Yasmine Gharzeddine",
+    "balance": 0,
+    "reason": "Paid in full on the day of the export. The old total was struck before that payment landed."
+  },
+  {
+    "legacyId": 1262,
+    "clientId": 1139,
+    "name": "Nabil Al Jawhary",
+    "balance": 105,
+    "reason": "Three unpaid charges of 35. The old running total picked up two of them and dropped the one from 10 June."
+  },
+  {
+    "legacyId": 1601,
+    "clientId": 1447,
+    "name": "Elena Abou Ibrahim",
+    "balance": 0,
+    "reason": "Settled. The 0.80 the documents leave is rounding."
+  },
+  {
+    "legacyId": 1667,
+    "clientId": 1505,
+    "name": "Pontea Nakhle",
+    "balance": 211,
+    "reason": "Paid 90 on account on the day of the export. The old total was struck before that payment landed."
+  },
+  {
+    "legacyId": 1979,
+    "clientId": 1785,
+    "name": "Cynthia Chouiry",
+    "balance": 4.83,
+    "reason": "A 4.83 charge raised on the day of the export, after the old total was struck."
+  },
+  {
+    "legacyId": 2029,
+    "clientId": 1829,
+    "name": "Rashad Aridi",
+    "balance": 0,
+    "reason": "A credit note of 5 settles the one charge on the account. It was never posted to an invoice.",
+    "creditNote": {
+      "legacyId": 16,
+      "date": "2026-08-01",
+      "amount": 5,
+      "purpose": null
+    }
+  }
+]

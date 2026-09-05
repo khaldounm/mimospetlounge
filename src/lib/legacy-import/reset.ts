@@ -13,28 +13,79 @@ import { prisma } from "@/lib/prisma";
 
 // Order matters: children before parents.
 const WIPE_ORDER = [
+  // The trail of everything the app did to the data this reset is about to
+  // throw away: who edited which invoice, who voided what, who signed in. None
+  // of it describes the database that comes out the other side, and a trail
+  // that outlives its subject is worse than no trail, because it reads as
+  // history of the new rows rather than of the old ones.
+  "audit_log",
   "reminders",
   "clinical_records",
   "notifications",
+  // The partner ledger, all three parts of it, and the partners themselves
+  // further down. Every figure in here is frozen against an invoice, a line
+  // item or a stock movement that this reset destroys, so they go together or
+  // the balance is left wrong in one specific direction each: an accrual left
+  // behind claims money owed for an invoice that no longer exists, a payout
+  // left behind pays down earnings that no longer exist, and an attended day
+  // left behind can be settled a SECOND time, because a day's settlement is not
+  // a flag on the day, it is a 'guarantee' accrual (see settlePartnerDay in
+  // lib/partner-days).
+  "partner_accruals",
+  "partner_attendance",
+  "partner_payouts",
   "payments",
+  // A grant names a client by id, and client ids do not survive the rebuild.
+  // The offers behind them are the clinic's own and stay.
+  "offer_grants",
+  // The whole expense ledger, imported or not. The imported rows obviously go;
+  // so do the ones the app raised for itself, because each of those mirrors a
+  // hidden invoice line or a register draw from a day that is being rebuilt
+  // from scratch, and so do any a staff member typed in, because on this
+  // database they were typed in while testing. A running cost that survives a
+  // rebuild is an expense with nothing behind it, which is the one shape of
+  // wrong that reads as perfectly ordinary on the P&L.
+  "running_costs",
+  // A day's till count. It counts cash against the invoices and payments of a
+  // day this reset is rebuilding from scratch, and the draw it records becomes
+  // a running cost above, so it is deleted after those rather than left sitting
+  // with the settings it resembles.
+  "register_closings",
   "invoice_line_items",
   "invoices",
   "bookings",
+  "inventory_batch_movements",
   "inventory_transactions",
+  "inventory_batches",
+  "inventory_barcodes",
+  // A cost recipe names an inventory item by id, and those ids are handed out
+  // fresh by the sequences this reset restarts: item 422 is a different product
+  // after a rebuild than it was before one. A surviving recipe would therefore
+  // still cost its service, just against whatever stock now holds the id, and
+  // that is the kind of wrong that foots, reconciles and is never noticed. The
+  // foreign key is RESTRICT so it cannot happen quietly, which is what stopped
+  // this reset dead rather than letting it through.
+  "service_cost_components",
   "purchase_order_lines",
   "purchase_orders",
   "supplier_payments",
-  // Both client and supplier opening balances. They come from the .mdb
-  // (CustomerWholesale.BBack and Suppliers.BBack) and the transform rebuilds
-  // them, so they are imported data like everything else here. Their two
+  // Client, supplier AND partner opening balances. The first two come from the
+  // .mdb (CustomerWholesale.BBack and Suppliers.BBack) and the transform
+  // rebuilds them, so they are imported data like everything else here. Their
   // foreign keys are RESTRICT rather than CASCADE, which is what made this
   // omission stop the reset dead instead of quietly leaving last import's
   // balances behind: the loader inserts ON CONFLICT DO NOTHING, so a stale row
-  // would have survived every future import untouched.
+  // would have survived every future import untouched. A partner opening
+  // balance is app-entered rather than imported and goes with its ledger.
   "opening_balances",
-  "partner_payouts",
   "inventory_items",
+  // Nothing rebuilds these: no table in the .mdb describes a partner, no seed
+  // writes one. They are typed into the app, and on this database that means
+  // typed in while testing, which is why they are cleared rather than carried
+  // into a fresh dataset. The real ones get entered after the cutover, against
+  // the data they will actually be paid on.
   "partners",
+  "supplier_contacts",
   "suppliers",
   "patients",
   "clients",
@@ -52,11 +103,14 @@ const PRESERVED = [
 // a legacy_id and must be cleared too, otherwise a re-import leaves the old
 // rows behind and stale classifications accumulate run after run.
 //
-// running_costs is here rather than in WIPE_ORDER for the same reason: the
-// imported expense ledger must go, but a cost a staff member typed into the app
-// (or one the app raised for itself from a hidden invoice line) has no
-// legacy_id and is theirs, not the loader's.
-const LEGACY_OWNED = ["services", "running_costs"] as const;
+// Note what that costs: every service in this database carries a legacy_id, so
+// all of them are deleted here and re-inserted by seed:inventory as new rows.
+// The columns that seed does not own go with them, which means a rebuild clears
+// partner_id and the two rate overrides on every service, and takes the cost
+// recipes hanging off them. Both halves of a partner-performed service, the
+// partner and the terms, are entered after the cutover rather than carried
+// through it.
+const LEGACY_OWNED = ["services"] as const;
 
 export async function reset() {
   const before = await counts();

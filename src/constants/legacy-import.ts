@@ -135,6 +135,22 @@ export const LEGACY_OPENING_BALANCE_SOURCE =
 export const LEGACY_OPENING_BALANCE_SOURCE_CLIENT =
   "GT_Data Access system, CustomerWholesale.BBack";
 
+// The old file keeps credit notes in a table of their own, CreditNote, whose
+// ids start again at 1 and so collide with CustInvoiceID. A credit note that
+// becomes an invoice here is given legacy_id = this base + its CnID, which
+// keeps the column unique and keeps the seed idempotent: a rebuild updates the
+// same six rows rather than adding six more. The base is far above the highest
+// CustInvoiceID in the file (about 20,400 as at the 2026-09-05 export) and the
+// gap is deliberate, so the two never meet however long Access ran.
+export const LEGACY_CREDIT_NOTE_ID_BASE = 900_000;
+
+// The same trick for a settlement: a charge posted to close an account whose
+// documents and agreed balance disagree for a reason nothing in the old file
+// records. Keyed on the CLIENT's legacy id rather than a document id, because
+// there is at most one per account, which is what makes a rebuild update the
+// same row instead of stacking a second settlement on top.
+export const LEGACY_SETTLEMENT_ID_BASE = 950_000;
+
 // ── Running costs ────────────────────────────────────────────────────────
 // Every imported expense lands in one category rather than being sorted into
 // the app's own. The old system's ExType is a mix of two axes: "Salary" and

@@ -1,7 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { MenuItem, Stack, TextField } from "@mui/material";
+import {
+  Autocomplete,
+  Box,
+  Stack,
+  TextField,
+  createFilterOptions,
+} from "@mui/material";
 import {
   getCountries,
   getCountryCallingCode,
@@ -28,6 +34,12 @@ interface CountryOption {
   callingCode: string;
   flag: string;
 }
+
+// Let the user search by country name ("Leb"), ISO code ("LB") or dialling
+// code (typed with or without the leading "+").
+const filterCountries = createFilterOptions<CountryOption>({
+  stringify: (c) => `${c.name} ${c.code} +${c.callingCode} ${c.callingCode}`,
+});
 
 interface PhoneFieldProps {
   // Current value as stored (E.164, e.g. "+96170121556"), or "".
@@ -97,32 +109,32 @@ export default function PhoneField({
       spacing={1}
       sx={{ width: fullWidth ? "100%" : undefined }}
     >
-      <TextField
-        select
-        label="Code"
-        value={country}
-        onChange={(e) => {
-          const next = e.target.value as CountryCode;
-          setCountry(next);
-          emit(next, national);
+      <Autocomplete
+        options={countries}
+        value={countries.find((c) => c.code === country)}
+        onChange={(_, next) => {
+          if (!next) return;
+          setCountry(next.code);
+          emit(next.code, national);
         }}
-        sx={{ minWidth: 130 }}
-        slotProps={{
-          select: {
-            renderValue: (v) => {
-              const opt = countries.find((c) => c.code === v);
-              return opt ? `${opt.flag} +${opt.callingCode}` : "";
-            },
-            MenuProps: { slotProps: { paper: { style: { maxHeight: 360 } } } },
-          },
+        filterOptions={filterCountries}
+        getOptionLabel={(c) => `${c.flag} +${c.callingCode}`}
+        isOptionEqualToValue={(a, b) => a.code === b.code}
+        autoHighlight
+        disableClearable
+        openOnFocus
+        sx={{ minWidth: 150 }}
+        slotProps={{ paper: { sx: { width: 280 } } }}
+        renderOption={(props, c) => {
+          const { key, ...rest } = props as typeof props & { key: string };
+          return (
+            <Box component="li" key={key} {...rest}>
+              {c.flag}&nbsp;&nbsp;{c.name} (+{c.callingCode})
+            </Box>
+          );
         }}
-      >
-        {countries.map((c) => (
-          <MenuItem key={c.code} value={c.code}>
-            {c.flag}&nbsp;&nbsp;{c.name} (+{c.callingCode})
-          </MenuItem>
-        ))}
-      </TextField>
+        renderInput={(params) => <TextField {...params} label="Code" />}
+      />
       <TextField
         label={label}
         value={national}

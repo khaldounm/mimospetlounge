@@ -222,9 +222,7 @@ export async function getClientStatement(
       kind: "payment",
       date: toDateOnly(payment.paidAt) ?? "",
       reference: payment.reference || `Payment #${payment.paymentId}`,
-      description: payment.invoiceId
-        ? "Payment received"
-        : "Payment on account",
+      description: describePayment(payment.amount, payment.invoiceId != null),
       charge: "0.00",
       payment: payment.amount.toFixed(2),
       href: payment.invoiceId ? `/invoices/${payment.invoiceId}` : null,
@@ -284,19 +282,38 @@ export async function getClientStatement(
   };
 }
 
+// A refund is a payment row with its sign reversed: money handed back rather
+// than taken in. The old system recorded a few dozen, and the import carries
+// them across as negative payments, so the running balance goes UP on that row.
+// Printing "Payment received" above a negative figure is exactly the kind of
+// small wrongness that produces the phone call this document exists to prevent.
+function describePayment(amount: Prisma.Decimal, applied: boolean): string {
+  if (amount.isNegative()) return "Refund";
+  return applied ? "Payment received" : "Payment on account";
+}
+
 // A one-line description for an invoice row in the summary view, where the
 // items themselves are not listed.
 //
 // Deliberately says nothing an invoice's `notes` might: those are written for
 // staff, and this document is read by the client over WhatsApp.
 function describeInvoice(itemCount: number, total: Prisma.Decimal): string {
-  // A pure return nets negative, and calling that an invoice on a document the
-  // customer reads invites the phone call it is meant to prevent.
-  if (total.isNegative()) return "Return";
+  // Two different negatives, and the client can tell them apart even if the
+  // ledger cannot: a return means goods came back, and its lines say which; a
+  // credit note is money taken off the account with nothing itemised behind it,
+  // so it has no lines at all. Nothing else in this database is negative with
+  // nothing to show, which is what makes the test safe rather than a guess.
+  if (total.isNegative()) return itemCount === 0 ? "Credit note" : "Return";
   // The old system booked a payment against a document of its own, which comes
   // across as an invoice carrying nothing. The payment beneath it references it
   // by number, so the row has to stay; it just has no charge to explain.
-  if (itemCount === 0) return total.isZero() ? "No charge" : "Invoice";
+  //
+  // A charge with nothing itemised is the credit note's mirror image: an
+  // adjustment to the account rather than a sale. It cannot be a sale, because
+  // a hidden line is left out of the invoice total, so an invoice that charges
+  // something always has at least one line the client can see.
+  if (itemCount === 0)
+    return total.isZero() ? "No charge" : "Account settlement";
   return itemCount === 1 ? "1 item" : `${itemCount} items`;
 }
 

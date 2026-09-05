@@ -681,10 +681,20 @@ export async function transform() {
   // resolves, so an invoice still shows what was paid against it, while the
   // account balance is what really says whether a client owes anything.
   //
-  // The app requires a payment to be positive. The file also holds refunds
-  // (negative) and zero-value rows, so a refund flags its invoice rather than
-  // being dropped silently.
-  const refunds = new Map<number, number>();
+  // The file also holds refunds (negative) and zero-value rows. A zero payment
+  // says nothing and is skipped. A refund is imported AS a negative payment,
+  // which is the whole of what it is: money handed back across the counter.
+  //
+  // It used to be skipped and its invoice flagged instead, on the reasoning
+  // that a payment ought to be positive. That reasoning was about the app's own
+  // entry form, not about the ledger: the payments CHECK constraint is
+  // `amount <> 0`, not `amount > 0`, and every figure built on payments is a
+  // sum, so a refund belongs in each of them as the outflow it was. Dropping it
+  // left the client having paid more than they did. On this file that
+  // overstated what 27 accounts had settled, by 1,078.31 in total, and it was
+  // the single largest reason a statement would not tie back to its own
+  // documents: it accounted for 21 of the 40 accounts that did not.
+  let refunds = 0;
   let zeroPays = 0;
   let unlinked = 0;
   for (const p of pays) {
@@ -693,14 +703,12 @@ export async function transform() {
     const inv = invoiceId.get(num(p.InvNo)) ?? null;
     if (!inv) unlinked++;
     const amount = money(p.PaymentAmount);
-    if (amount < 0) {
-      if (inv) refunds.set(inv, (refunds.get(inv) ?? 0) + amount);
-      continue;
-    }
     if (amount === 0) {
       zeroPays++;
       continue;
     }
+    const refund = amount < 0;
+    if (refund) refunds++;
     // What was physically handed over, and in what. The old system split every
     // payment into a Dollar and an LL column: 6,331 are dollars only, 2 are
     // lira only and 1 is both. `amount` stays the USD equivalent that settles
@@ -724,6 +732,20 @@ export async function transform() {
       ? atClinicTime(`${payDay.date} ${payClock ? payClock.time : "00:00:00"}`)
       : null;
 
+    // Both flags land on the payment row itself. The refund note used to be
+    // written onto the invoice, which was the only place it could go while the
+    // payment was being dropped; now that the row exists, the note belongs on
+    // it rather than on a document that is otherwise unremarkable.
+    const review: string[] = [];
+    if (mixed)
+      review.push(
+        `Taken in both currencies: ${dollars.toFixed(2)} USD and ${lira.toFixed(0)} LBP at ${rate}. Imported at its dollar value; confirm how it should be recorded.`,
+      );
+    if (refund)
+      review.push(
+        `The old system recorded this as a refund of ${Math.abs(amount).toFixed(2)}. It is imported as a negative payment, so it reduces what this client has paid. Confirm the money was handed back.`,
+      );
+
     payRows.push([
       num(p.PaymentID),
       owner,
@@ -733,10 +755,8 @@ export async function transform() {
       liraOnly ? lira : amount,
       liraOnly && rate > 0 ? rate : null,
       paidAt,
-      mixed,
-      mixed
-        ? `Taken in both currencies: ${dollars.toFixed(2)} USD and ${lira.toFixed(0)} LBP at ${rate}. Imported at its dollar value; confirm how it should be recorded.`
-        : null,
+      review.length > 0,
+      review.join("\n\n") || null,
     ]);
   }
   await upsert(
@@ -771,17 +791,8 @@ export async function transform() {
     ],
   );
   report.push(
-    `payments       ${payRows.length} (${unlinked} on account only, ${refunds.size} refunds flagged, ${zeroPays} zero-value skipped)`,
+    `payments       ${payRows.length} (${unlinked} on account only, ${refunds} refunds imported as negative, ${zeroPays} zero-value skipped)`,
   );
-
-  // Flag the invoices that carried a refund.
-  for (const [inv, amount] of refunds) {
-    await prisma.$executeRawUnsafe(
-      `UPDATE "invoices" SET "needs_review" = true, "review_note" = $2 WHERE "invoice_id" = $1`,
-      inv,
-      `The old system recorded a refund of ${amount.toFixed(2)} against this invoice. Refunds are not imported as payments: confirm how this should be recorded.`,
-    );
-  }
 
   // ── Purchases ──────────────────────────────────────────────────────────
   // Supplier accounts read as zero with no orders until this exists: the old

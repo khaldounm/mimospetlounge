@@ -200,11 +200,49 @@ PET_OVERRIDES = {
 }
 
 # ---------------------------------------------------------------- phones
+LB_CC = "961"
+
 def clean_phone(p):
     p = re.sub(r"\D", "", p or "")
+    # A cell holding the same number on two lines arrives here as that number
+    # written twice: the newline is stripped along with every other non-digit.
+    # Eight clients have one, and all eight are a repeat rather than a second
+    # number, so the halves are checked for equality instead of being split.
+    half = len(p) // 2
+    if half and len(p) % 2 == 0 and p[:half] == p[half:]: p = p[:half]
     if not p or p == "0" or len(p) < 6: return None
-    if p.startswith("961"): p = p[3:]
+    if p.startswith(LB_CC): p = p[3:]
     return p[:20] or None
+
+def to_e164(digits):
+    """Digits from clean_phone() to E.164. Returns (value, readable).
+
+    A sibling of toE164() in src/lib/legacy-import/phone.ts, which reads the
+    same file for the loader. Both exist because the loader cannot use the
+    app's libphonenumber-js util under tsx; this one cannot use it either,
+    being Python. Both are deliberately narrow, covering the shapes actually
+    present in GT_Data rather than the world's numbering plans, and both flag
+    what they cannot read instead of dropping it.
+
+    An unreadable number comes back EXACTLY as it was written. Losing a
+    client's only phone number to a formatting pass is a worse outcome than
+    carrying an ugly one, and staff can correct it in the app, where the phone
+    field composes E.164 on its own.
+    """
+    if not digits: return None, True
+    # "00" is the international prefix as dialled from Lebanon.
+    if digits.startswith("00"):
+        rest = digits[2:]
+        return ("+" + rest, True) if 8 <= len(rest) <= 15 else (digits, False)
+    # clean_phone() has already taken a leading 961 off, so what is left should
+    # be a national number: 7 or 8 digits once the trunk zero goes. The mobile
+    # prefixes 70/71/76/78/79/81 are written without the zero, the 3-prefix
+    # with it, and stripping leading zeros lands both in the same place.
+    local = digits.lstrip("0")
+    if len(local) in (7, 8): return "+" + LB_CC + local, True
+    # Long enough to be a foreign number carrying its own country code.
+    if 11 <= len(digits) <= 15: return "+" + digits, True
+    return digits, False
 
 # ---------------------------------------------------------------- run
 rows = list(csv.DictReader(open(SRC)))
@@ -353,6 +391,16 @@ for r in rows:
     note_bits = []
     if insured and insured != "No": note_bits.append(f"Insurance: {insured}")
     if g(r, "DOB"): note_bits.append(f"Last visit in the old system: {g(r,'DOB')[:8]}")
+
+    # E.164 last, AFTER the duplicate checks above: those compare raw digit
+    # strings and would stop matching the moment the values changed shape.
+    (phone, ok1), (phone2, ok2) = to_e164(phone), to_e164(phone2)
+    unreadable = [v for v, ok in ((phone, ok1), (phone2, ok2)) if v and not ok]
+    if unreadable:
+        stats["phone_unreadable"] += len(unreadable)
+        reviews.append(
+            'Phone number "%s" could not be read and is stored as written.'
+            % '", "'.join(unreadable))
 
     clients.append({
         "legacyId": cid, "salutation": salutation, "firstName": first[:100],
