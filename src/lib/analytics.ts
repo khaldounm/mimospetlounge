@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { computePartnerPayable, effectiveRates } from "@/lib/partners";
 import { BOOKING_STATUSES } from "@/types/enums";
 import {
   buildBuckets,
@@ -1200,6 +1201,13 @@ export async function getInventorySnapshot(): Promise<InventoryAnalytics> {
       salePrice: true,
       lastCost: true,
       partnerId: true,
+      // The deal in force on a consigned item, needed to say how much of the
+      // margin on the shelf is the partner's rather than the clinic's. Both
+      // rates fall back to the partner's defaults, which is why the partner
+      // travels with the row.
+      partnerCostPct: true,
+      partnerProfitPct: true,
+      partner: { select: { defaultCostPct: true, defaultProfitPct: true } },
       expiryDate: true,
       tracksExpiry: true,
       // Soonest dated batch still on the shelf. For a tracked item this is the
@@ -1214,16 +1222,75 @@ export async function getInventorySnapshot(): Promise<InventoryAnalytics> {
     },
   });
 
-  let stockValuation = 0;
+  // The shelf costed, priced, and the gap between the two split by whose money
+  // it is. Reading a single "stock value" was what made the figure impossible
+  // to reconcile against the old system: that number is clinic-funded stock
+  // only, so it comes up short of a report that counts every item on the shelf,
+  // and nothing on the screen said so.
+  //
+  // The identity these keep is what makes the card checkable by eye:
+  //
+  //   stockCost + clinicProfit + partnerShare === retailValue
+  //
+  // Cost is what the CLINIC paid for the stock on the shelf, and a partner deal
+  // does not by itself mean the clinic paid nothing. Nothing in the schema
+  // records who funded an item, so the cost rate stands in for it, and it is a
+  // faithful stand-in: the share of cost that flows back to the partner on a
+  // sale is the share the partner put up. At this clinic's 0% every item was
+  // bought by the clinic, partner-linked or not, and the partner simply takes a
+  // cut of the margin. At 100% the partner fronted it and is made whole.
+  //
+  //   an item at 100, sold at 150, partner on 0% cost and 50% profit
+  //   -> cost 100 is the clinic's, partner takes 25, clinic keeps 125
+  //
+  // Reading a single "stock value" was what made the figure impossible to
+  // reconcile against the old system: it counted clinic-owned items only, on the
+  // assumption that a partner item was the partner's money. Here it never was.
+  let ownedCost = 0; // stock carrying no partner deal, at cost
+  let consignedCost = 0; // stock under a partner deal, at cost
+  let retailValue = 0; // the whole shelf at its sale price
+  let partnerShare = 0; // the whole payout owed on consigned stock
+  let partnerCostPart = 0; // how much of that payout is outlay coming back
+  let itemsMissingCost = 0;
+  let itemsMissingPrice = 0;
   let lowStockCount = 0;
   let outOfStockCount = 0;
   let expiringSoonCount = 0;
   for (const it of items) {
-    const unitCost = it.lastCost?.toNumber() ?? it.salePrice?.toNumber() ?? 0;
+    // No fallback to sale price. Valuing stock at retail because its cost was
+    // never recorded overstates the asset, and it disagreed with the partner
+    // valuation in lib/partners, which has always used `lastCost ?? 0`. Items
+    // with no cost are counted instead, so the gap is stated rather than
+    // quietly filled in.
+    const unitCost = it.lastCost?.toNumber() ?? 0;
+    const unitPrice = it.salePrice?.toNumber() ?? 0;
     const stock = it.currentStock.toNumber();
-    // Consigned stock was funded by the partner, not the clinic, so it is not
-    // the clinic's cash tied up in inventory.
-    if (it.partnerId == null) stockValuation += stock * unitCost;
+    const costValue = stock * unitCost;
+    retailValue += stock * unitPrice;
+    if (stock > 0 && it.lastCost == null) itemsMissingCost += 1;
+    if (stock > 0 && it.salePrice == null) itemsMissingPrice += 1;
+    if (it.partnerId == null) {
+      ownedCost += costValue;
+    } else {
+      consignedCost += costValue;
+      // Costed through the same function the invoice pays out on, so this card
+      // and the partner's balance can never tell two different stories about
+      // the same deal.
+      const payable = computePartnerPayable(
+        stock,
+        unitPrice,
+        unitCost,
+        effectiveRates(it, it.partner),
+      );
+      // Taken whole, and its cost half taken from costPart rather than by
+      // subtracting the item's cost from it. Those are not the same number: the
+      // payout returns `cost * costPct%`, so at this clinic's 0% the partner
+      // gets no outlay back at all and subtracting cost would report their
+      // earnings as a large negative. costPart exists precisely because a cost
+      // rate that is not 100 makes that subtraction wrong.
+      partnerShare += payable.total.toNumber();
+      partnerCostPart += payable.costPart.toNumber();
+    }
     if (stock <= 0) outOfStockCount += 1;
     if (it.reorderLevel > 0 && stock <= it.reorderLevel) lowStockCount += 1;
     const expiry = it.tracksExpiry
@@ -1264,9 +1331,38 @@ export async function getInventorySnapshot(): Promise<InventoryAnalytics> {
     .slice(0, 10)
     .map((it) => ({ itemId: it.itemId, name: it.name, unit: it.unit }));
 
+  // Rounded first, then the clinic's share taken as the residual of the rounded
+  // figures rather than rounded on its own. Rounding three sums independently
+  // lets them miss the total by a cent or two, and a card whose whole point is
+  // that the lines add up cannot afford to be a cent out. Any sub-cent
+  // remainder therefore lands on the clinic, which is the same convention
+  // computePartnerPayable already uses for the residual half of a line.
+  //
+  // A shelf holding items priced below cost makes this negative, which is the
+  // honest answer rather than something to floor at zero.
+  // Everything on the shelf at cost, less whatever part of it a partner fronted
+  // and will be handed back on the sale. At a 0% cost rate that subtracts
+  // nothing and the whole shelf is the clinic's, which is the case here.
+  const stockCost = round2(ownedCost + consignedCost - partnerCostPart);
+  const share = round2(partnerShare);
+  const retail = round2(retailValue);
+  const clinicProfit = round2(retail - stockCost - share);
+  // Both footnotes, rounded on their own because neither is a term in the
+  // identity: how much of the shelf sits under a partner deal, and how much of
+  // the partner's payout is their own money coming back rather than earnings.
+  const partnerCost = round2(consignedCost);
+  const shareCostPart = round2(partnerCostPart);
+
   return {
     totalItems: items.length,
-    stockValuation: round2(stockValuation),
+    stockCost,
+    consignedCost: partnerCost,
+    clinicProfit,
+    partnerShare: share,
+    partnerShareCostPart: shareCostPart,
+    retailValue: retail,
+    itemsMissingCost,
+    itemsMissingPrice,
     lowStockCount,
     outOfStockCount,
     expiringSoonCount,

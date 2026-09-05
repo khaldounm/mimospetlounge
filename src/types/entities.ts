@@ -561,7 +561,37 @@ export interface ClientsAnalytics {
 
 export interface InventoryAnalytics {
   totalItems: number; // count of active inventory items
-  stockValuation: number; // sum of currentStock * unit cost
+  // What the CLINIC paid for the stock on the shelf: every item at cost, less
+  // any part of it a partner fronted and takes back on the sale. A partner deal
+  // does not on its own mean the stock was the partner's money, and at this
+  // clinic's 0% cost rate none of it is: the clinic buys the stock and the
+  // partner takes a cut of the margin.
+  stockCost: number;
+  // How much of the shelf sits under a partner deal, and where the shelf's
+  // margin would land. These state the clinic's markup outright, so they are
+  // null (not zero) for a caller without orders:read, the same gate an item's
+  // lastCost takes everywhere else. See canSeeCost.
+  //
+  // Three of them hold this identity, which is what the card shows:
+  //
+  //   stockCost + clinicProfit + partnerShare === retailValue
+  //
+  // consignedCost is not one of them, only a footnote saying how much of the
+  // cost line is stock a partner earns on.
+  consignedCost: number | null; // stock under a partner deal, at cost
+  clinicProfit: number | null; // margin the clinic would keep on the lot
+  // The whole payout owed to partners were the consigned stock to sell, and how
+  // much of it is their outlay returning rather than earnings. At a 0% cost
+  // rate the second is zero and the payout is pure profit share; at 100% it is
+  // the outlay coming back with the profit split on top.
+  partnerShare: number | null;
+  partnerShareCostPart: number | null;
+  retailValue: number | null; // the whole shelf at its sale price
+  // Items on the shelf with no cost, and none with no sale price, on file. The
+  // figures above treat a missing one as zero rather than guessing, so these
+  // say how much of the shelf the card is quiet about.
+  itemsMissingCost: number | null;
+  itemsMissingPrice: number | null;
   lowStockCount: number;
   outOfStockCount: number;
   expiringSoonCount: number; // within 30 days

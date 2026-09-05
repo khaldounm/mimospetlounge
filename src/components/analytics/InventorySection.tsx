@@ -7,6 +7,7 @@ import { rangeSummary } from "@/utils/date-range";
 import DateRangeControl from "@/components/ui/DateRangeControl";
 import AnalyticsSection from "./AnalyticsSection";
 import ItemLookupCard from "./ItemLookupCard";
+import ShelfValueCard from "./ShelfValueCard";
 import {
   ChartCard,
   ChartGrid,
@@ -76,7 +77,15 @@ export default function InventorySection({
         <>
           <KpiGrid>
             <KpiCard label="Total items" value={String(data.totalItems)} />
-            <KpiCard label="Stock value" value={money(data.stockValuation)} />
+            <KpiCard
+              label="Stock value"
+              value={money(data.stockCost)}
+              hint={
+                data.consignedCost != null && data.consignedCost !== 0
+                  ? `includes ${money(data.consignedCost)} a partner earns on`
+                  : undefined
+              }
+            />
             <KpiCard label="Low stock" value={String(data.lowStockCount)} />
             <KpiCard
               label="Out of stock"
@@ -87,6 +96,7 @@ export default function InventorySection({
               value={String(data.expiringSoonCount)}
             />
           </KpiGrid>
+          <ShelfValueCard data={data} />
           <ChartGrid>
             <ChartCard title="Top 10 items sold">
               {topSold.length > 0 ? (

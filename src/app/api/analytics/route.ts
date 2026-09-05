@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ApiError, handle, requirePermission } from "@/lib/api";
-import { hasPermission } from "@/lib/permissions";
+import { canSeeCost, hasPermission } from "@/lib/permissions";
 import { getAnalyticsSection, getInventorySnapshot } from "@/lib/analytics";
 import { analyticsPanelQuerySchema } from "@/schemas/analytics";
 import type { ClientsAnalytics } from "@/types/entities";
@@ -52,6 +52,26 @@ export async function GET(request: Request) {
     // the parse discriminated them.
     if (!("from" in query)) {
       const data = await getInventorySnapshot();
+      // The shelf breakdown prices the stock both ways and names the margin
+      // between them, which discloses exactly what an item's lastCost does. So
+      // it takes the one cost gate the rest of the app uses. Stripped here
+      // rather than in the component, so what may not be shown is never sent to
+      // the browser. The headline stockValuation is left as it always was.
+      if (!canSeeCost(session.user)) {
+        return NextResponse.json({
+          section: query.section,
+          data: {
+            ...data,
+            consignedCost: null,
+            clinicProfit: null,
+            partnerShare: null,
+            partnerShareCostPart: null,
+            retailValue: null,
+            itemsMissingCost: null,
+            itemsMissingPrice: null,
+          },
+        });
+      }
       return NextResponse.json({ section: query.section, data });
     }
 

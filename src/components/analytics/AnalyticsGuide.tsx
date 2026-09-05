@@ -231,8 +231,19 @@ export default function AnalyticsGuide() {
                 How many active products you stock.
               </Term>
               <Term label="Stock value">
-                Quantity on hand times its cost, added up. Same figure as
-                Inventory on hand.
+                Quantity on hand times its cost, added up across every item you
+                paid for. Stock a partner earns on is still your money and is
+                counted here; the note underneath says how much of it there is.
+              </Term>
+              <Term label="Stock on hand">
+                Where the shelf&apos;s money would land if every item sold at
+                today&apos;s price. Cost value is your own outlay coming back to
+                you. Partner profit is your partners&apos; cut of the margin at
+                their agreed rates, and Clinic profit is the margin you keep.
+                The three add up to Total, the whole shelf at its sale price. An
+                item costing $100 and selling at $150 with a partner on half the
+                profit reads as $100 cost, $25 to you and $25 to them. None of
+                it is earned until the stock actually sells.
               </Term>
               <Term label="Low stock / Out of stock">
                 Items at or below their reorder level, and items with zero on
