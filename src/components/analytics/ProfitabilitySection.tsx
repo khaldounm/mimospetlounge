@@ -27,7 +27,7 @@ export default function ProfitabilitySection({
   const { range, data, loading, error, setRange, load } =
     useAnalyticsSection<ProfitAnalytics>("profit", initialRange);
   const trendHasData = data?.trend.some(
-    (t) => t.revenue > 0 || t.cogs > 0 || t.partnerPayouts > 0 || t.costs > 0,
+    (t) => t.revenue > 0 || t.cogs > 0 || t.partnerCost > 0 || t.costs > 0,
   );
 
   return (
@@ -54,8 +54,8 @@ export default function ProfitabilitySection({
               value={money(data.periodCogs)}
             />
             <KpiCard
-              label="Partner payouts"
-              value={money(data.periodPartnerPayouts)}
+              label="Partner earnings"
+              value={money(data.periodPartnerCost)}
             />
             <KpiCard label="Operating costs" value={money(data.periodCosts)} />
             <KpiCard label="Net profit" value={money(data.periodProfit)} />
@@ -112,8 +112,8 @@ export default function ProfitabilitySection({
                       valueFormatter: (v) => money(v),
                     },
                     {
-                      data: data.trend.map((t) => t.partnerPayouts),
-                      label: "Partner payouts",
+                      data: data.trend.map((t) => t.partnerCost),
+                      label: "Partner earnings",
                       valueFormatter: (v) => money(v),
                     },
                     {

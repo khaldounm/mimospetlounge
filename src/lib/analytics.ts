@@ -245,7 +245,7 @@ async function getRevenueSection(
 }
 
 // Net profit within the range = revenue collected - COGS (whatever the clinic
-// itself funded) - partner payouts - operating (running) costs. COGS and partner
+// itself funded) - partner earnings - operating (running) costs. COGS and partner
 // payouts are the frozen amounts on Sold movements (bucketed by sale date, void
 // reversals net out); revenue is cash collected. Self-contained so it can be
 // queried for a range independent of the revenue section.
@@ -268,6 +268,7 @@ async function getProfitSection(
     categoryGroups,
     soldRows,
     partnerRows,
+    accrualRows,
     paymentRows,
     unsoldRows,
   ] = await Promise.all([
@@ -330,6 +331,25 @@ async function getProfitSection(
       },
       select: { performedAt: true, partnerPayable: true },
     }),
+    // What partners earned that has no stock movement to hang off: a service
+    // they performed, and a guaranteed day topped up. Both are real costs the
+    // moment they are earned, and neither reached this calculation before, so a
+    // partner on services was working for free as far as profit was concerned.
+    //
+    // Settling a partner is NOT read here and must not be. A payout moves cash
+    // against a balance already expensed above; charging it again would count
+    // every partner cost twice.
+    //
+    // reversedAt filters out a voided service line and an unsettled day, exactly
+    // as the partner's own balance does, so the two never disagree. earnedOn is
+    // date-only and takes calendar bounds.
+    prisma.partnerAccrual.findMany({
+      where: {
+        reversedAt: null,
+        earnedOn: { gte: dateFrom, lt: dateToExclusive },
+      },
+      select: { earnedOn: true, amount: true },
+    }),
     // Collected revenue for the profit trend (cash basis).
     prisma.payment.findMany({
       where: { paidAt: { gte: from, lt: toExclusive } },
@@ -373,12 +393,23 @@ async function getProfitSection(
     addTo(cogsMap, bucketKeyOf(row.performedAt, granularity), clinicFunded);
   }
 
+  // Everything partners earn, whichever of the three ways they earned it. Stock
+  // is frozen on the movement and dated by it; services and guaranteed days are
+  // accruals dated by the day earned. One bucket, because a reader asking what
+  // partners cost this month means all of it.
   const partnerMap = zeroMap(buckets);
   for (const row of partnerRows) {
     addTo(
       partnerMap,
       bucketKeyOf(row.performedAt, granularity),
       row.partnerPayable?.toNumber() ?? 0,
+    );
+  }
+  for (const row of accrualRows) {
+    addTo(
+      partnerMap,
+      bucketKeyOf(row.earnedOn, granularity),
+      row.amount.toNumber(),
     );
   }
 
@@ -394,19 +425,19 @@ async function getProfitSection(
   const trend = buckets.map((b) => {
     const revenue = round2(revenueMap.get(b.key) ?? 0);
     const cogs = round2(cogsMap.get(b.key) ?? 0);
-    const partnerPayouts = round2(partnerMap.get(b.key) ?? 0);
+    const partnerCost = round2(partnerMap.get(b.key) ?? 0);
     const costs = round2(costMap.get(b.key) ?? 0);
     return {
       label: b.label,
       revenue,
       cogs,
-      partnerPayouts,
+      partnerCost,
       costs,
-      profit: round2(revenue - cogs - partnerPayouts - costs),
+      profit: round2(revenue - cogs - partnerCost - costs),
     };
   });
 
-  // Full cost breakdown: operating-cost categories plus COGS and partner payouts
+  // Full cost breakdown: operating-cost categories plus COGS and partner earnings
   // as their own slices, so the chart shows where every cost dollar goes.
   const cogsTotal = round2([...cogsMap.values()].reduce((s, v) => s + v, 0));
   const partnerTotal = round2(
@@ -419,7 +450,7 @@ async function getProfitSection(
   if (cogsTotal > 0)
     byCategory.push({ label: "Cost of goods sold", value: cogsTotal });
   if (partnerTotal > 0)
-    byCategory.push({ label: "Partner payouts", value: partnerTotal });
+    byCategory.push({ label: "Partner earnings", value: partnerTotal });
   byCategory.sort((a, b) => b.value - a.value);
   byCategory.splice(8);
 
@@ -446,7 +477,7 @@ async function getProfitSection(
   return {
     periodRevenue,
     periodCogs: cogsTotal,
-    periodPartnerPayouts: partnerTotal,
+    periodPartnerCost: partnerTotal,
     periodCosts,
     periodProfit,
     periodClinicUse: round2(clinicUse),
@@ -1372,13 +1403,13 @@ export async function getInventorySnapshot(): Promise<InventoryAnalytics> {
   // Both footnotes, rounded on their own because neither is a term in the
   // identity: how much of the shelf sits under a partner deal, and how much of
   // the partner's payout is their own money coming back rather than earnings.
-  const partnerCost = round2(consignedCost);
+  const consignedAtCost = round2(consignedCost);
   const shareCostPart = round2(partnerCostPart);
 
   return {
     totalItems: items.length,
     stockCost,
-    consignedCost: partnerCost,
+    consignedCost: consignedAtCost,
     clinicProfit,
     partnerShare: share,
     partnerShareCostPart: shareCostPart,

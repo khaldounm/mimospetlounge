@@ -113,28 +113,31 @@ export default function AnalyticsGuide() {
                 COGS. It is the cost of the goods, not their sale price. Items a
                 partner earns on are counted here too, because you paid for
                 them; only the part of a cost your partner is handed back on the
-                sale moves to Partner payouts instead.
+                sale moves to Partner earnings instead.
               </Term>
-              <Term label="Partner payouts">
-                What you owe partners this month on the items they earn on:
-                their agreed share of the profit, plus their cost back on a deal
-                that returns it. Example: an item cost $100 and sold for $150
-                with the partner on half the profit and no cost, so you owe them
-                $25 and keep $125, being your $100 back and $25 of profit.
+              <Term label="Partner earnings">
+                Everything your partners earned this month, counted the moment
+                they earned it: their cut of the stock they earn on, their cut
+                of the services they performed, and any guaranteed day topped
+                up. Example: an item cost $100 and sold for $150 with the
+                partner on half the profit and no cost, so they earn $25 and you
+                keep $125, being your $100 back and $25 of profit. Paying a
+                partner does not show up here, because the earning was already
+                counted; a payout settles what this figure created.
               </Term>
               <Term label="Operating costs">
                 Your running costs logged this month: rent, salaries, utilities,
                 and the like.
               </Term>
               <Term label="Net profit this month">
-                Revenue minus COGS minus partner payouts minus operating costs.
+                Revenue minus COGS minus partner earnings minus operating costs.
                 The money you truly made this month.
               </Term>
               <Term label="Inventory on hand">
-                The value of the clinic-owned stock you are holding right now,
-                valued at what it cost you. This is an asset you own, not money
-                lost. Consigned stock is funded by partners, so it is not
-                included here.
+                The value of the stock you are holding right now, valued at what
+                it cost you. This is an asset you own, not money lost. Stock a
+                partner earns on is counted too, because you paid for it; only
+                stock a partner actually fronted is left out.
               </Term>
             </Section>
 

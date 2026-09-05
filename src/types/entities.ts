@@ -621,27 +621,31 @@ export interface BookingsAnalytics {
 
 export interface ProfitAnalytics {
   periodRevenue: number; // payments collected within the range
-  periodCogs: number; // cost of clinic-owned inventory items sold within the range
-  periodPartnerPayouts: number; // owed to partners on consigned sales within the range
+  periodCogs: number; // cost the clinic itself funded on items sold in the range
+  // Everything partners EARNED in the range, all three ways: their cut of stock
+  // sold, of services they performed, and any guaranteed day topped up. Not what
+  // was paid out to them. Settling a partner moves cash against a balance this
+  // already charged, so payouts are deliberately not read here.
+  periodPartnerCost: number;
   periodCosts: number; // running (operating) costs incurred within the range
-  periodProfit: number; // revenue minus COGS minus partner payouts minus operating costs
+  periodProfit: number; // revenue minus COGS minus partner earnings minus operating costs
   // Value of stock that left without being sold, over the range. Reported for
   // visibility and deliberately NOT subtracted from periodProfit: consumables
   // are expensed through running costs, so charging them here as well would
   // count the same stock twice.
   periodClinicUse: number; // stock consumed in the clinic (Used movements)
   periodWriteOffs: number; // stock binned (Expired movements)
-  // Bucketed over the range: collected revenue, COGS, partner payouts, operating
+  // Bucketed over the range: collected revenue, COGS, partner earnings, operating
   // costs, net profit.
   trend: {
     label: string;
     revenue: number;
     cogs: number;
-    partnerPayouts: number;
+    partnerCost: number;
     costs: number;
     profit: number;
   }[];
-  byCategory: NamedValue[]; // costs split by category (incl. COGS + partner payouts) within the range
+  byCategory: NamedValue[]; // costs split by category (incl. COGS + partner earnings) within the range
 }
 
 // Cash out to suppliers. Deliberately separate from ProfitAnalytics and never
