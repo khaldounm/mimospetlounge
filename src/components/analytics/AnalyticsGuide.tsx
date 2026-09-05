@@ -108,17 +108,19 @@ export default function AnalyticsGuide() {
                 received, not just billed).
               </Term>
               <Term label="Cost of goods sold (COGS)">
-                What the clinic-owned items you SOLD this month originally cost
-                you to buy. Example: you sell a bag of treats that cost you $5,
-                so $5 is COGS. It is the cost of the goods, not their sale
-                price. Items sourced from a partner are counted under Partner
-                payouts instead, not here.
+                What the items you SOLD this month originally cost you to buy.
+                Example: you sell a bag of treats that cost you $5, so $5 is
+                COGS. It is the cost of the goods, not their sale price. Items a
+                partner earns on are counted here too, because you paid for
+                them; only the part of a cost your partner is handed back on the
+                sale moves to Partner payouts instead.
               </Term>
               <Term label="Partner payouts">
-                What you owe partners on the consigned items they sourced that
-                sold this month: their cost back plus their agreed share of the
-                profit. Example: a partner&apos;s item cost $10 and sold for $25
-                at a 20% share, so you owe them $10 + 20% of $15 = $13.
+                What you owe partners this month on the items they earn on:
+                their agreed share of the profit, plus their cost back on a deal
+                that returns it. Example: an item cost $100 and sold for $150
+                with the partner on half the profit and no cost, so you owe them
+                $25 and keep $125, being your $100 back and $25 of profit.
               </Term>
               <Term label="Operating costs">
                 Your running costs logged this month: rent, salaries, utilities,

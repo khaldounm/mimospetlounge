@@ -244,11 +244,16 @@ async function getRevenueSection(
   };
 }
 
-// Net profit within the range = revenue collected - COGS (clinic-owned) -
-// partner payouts - operating (running) costs. COGS and partner payouts are the
-// frozen amounts on Sold movements (bucketed by sale date, void reversals net
-// out); revenue is cash collected. Self-contained so it can be queried for a
-// range independent of the revenue section.
+// Net profit within the range = revenue collected - COGS (whatever the clinic
+// itself funded) - partner payouts - operating (running) costs. COGS and partner
+// payouts are the frozen amounts on Sold movements (bucketed by sale date, void
+// reversals net out); revenue is cash collected. Self-contained so it can be
+// queried for a range independent of the revenue section.
+//
+// Stock sold under a partner deal is counted once and only once, split by who
+// paid for it: the clinic's share of the cost lands in COGS, the partner's in
+// their payout. Which is which comes from the frozen costPart on the movement,
+// never from the presence of a partner.
 async function getProfitSection(
   range: AnalyticsRange,
 ): Promise<ProfitAnalytics> {
@@ -294,17 +299,27 @@ async function getProfitSection(
     // a sale back writes a Returned movement (referenceType "invoice") carrying
     // the same frozen cost at the opposite sign, so the signed sum below nets it
     // out. That covers both a voided invoice and a counter return, because they
-    // are the same event to the ledger and now share one type. Consigned items
-    // (partnerId set) are excluded here and counted as partner payouts instead,
-    // so their cost is not double-counted.
+    // are the same event to the ledger and now share one type.
+    //
+    // Partner items are INCLUDED. They used to be filtered out here on the
+    // reasoning that their payout already carried their cost, but that is only
+    // true of a deal that hands the partner their outlay back. On this clinic's
+    // deal (0% cost, a share of the margin) the clinic buys the stock and the
+    // payout returns none of it, so excluding these rows expensed nothing at all
+    // and overstated profit by the full cost of every partner-item sale. What
+    // the payout does cover is subtracted below, per row, rather than assumed.
     prisma.inventoryTransaction.findMany({
       where: {
-        partnerId: null,
         unitCost: { not: null },
         performedAt: { gte: from, lt: toExclusive },
         OR: [{ type: "Sold" }, { type: "Returned", referenceType: "invoice" }],
       },
-      select: { performedAt: true, quantity: true, unitCost: true },
+      select: {
+        performedAt: true,
+        quantity: true,
+        unitCost: true,
+        partnerCostPart: true,
+      },
     }),
     // Consignment payouts: the frozen amount owed to partners on their sold
     // items. Void reversals carry a negative payable, so they net out.
@@ -348,7 +363,14 @@ async function getProfitSection(
     // Signed by direction: a Sold line has negative quantity (adds cost), a void
     // reversal has positive quantity (removes it), so a voided sale nets to zero.
     const cost = -row.quantity.toNumber() * (row.unitCost?.toNumber() ?? 0);
-    addTo(cogsMap, bucketKeyOf(row.performedAt, granularity), cost);
+    // Less the part of that cost the partner is reimbursed for, which the payout
+    // below already charges. costPart is the only honest measure of who funded
+    // the stock: at a 0% cost rate it is zero and the whole cost stays the
+    // clinic's, at 100% it equals the cost and this row contributes nothing.
+    // Reversals negate costPart alongside the payable, so returns net out here
+    // exactly as they do there.
+    const clinicFunded = cost - (row.partnerCostPart?.toNumber() ?? 0);
+    addTo(cogsMap, bucketKeyOf(row.performedAt, granularity), clinicFunded);
   }
 
   const partnerMap = zeroMap(buckets);
