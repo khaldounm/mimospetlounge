@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Accordion,
@@ -176,6 +176,19 @@ export default function ServicesTable({
     setEditing(s);
     setDialogOpen(true);
   }
+
+  // Category choices for the form, so a service can be filed under the words the
+  // clinic actually uses instead of the four clinical record types. Built from
+  // initialServices (the unfiltered server load) unioned with whatever is on
+  // screen, because `services` shrinks as the user searches and the choices
+  // must not shrink with it.
+  const categoryOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const s of [...initialServices, ...services]) {
+      if (s.category) seen.add(s.category);
+    }
+    return [...seen].sort((a, b) => a.localeCompare(b));
+  }, [initialServices, services]);
 
   const groups = groupByCategory(services);
 
@@ -458,6 +471,7 @@ export default function ServicesTable({
       <ServiceFormDialog
         open={dialogOpen}
         service={editing}
+        categoryOptions={categoryOptions}
         canEditDeal={canEditDeal}
         canEditCost={canEditCost}
         onClose={() => setDialogOpen(false)}

@@ -8,12 +8,15 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  MenuItem,
   Stack,
   TextField,
 } from "@mui/material";
 import { apiRequest } from "@/utils/api-client";
 import type { ClinicalRecordDTO, ServicePickerOption } from "@/types/entities";
+import { recordTypeForCategory } from "@/constants/clinical";
+import ServiceSubcategorySelect, {
+  CUSTOM_SUBCATEGORY,
+} from "@/components/ui/ServiceSubcategorySelect";
 import VitalsFields from "./VitalsFields";
 import type { RecordType } from "@/types/enums";
 
@@ -90,13 +93,23 @@ function EditRecordForm({
   const [saving, setSaving] = useState(false);
 
   const recordType = record.recordType;
-  const availableServices = services.filter((s) => s.category === recordType);
 
   function changeSubcategory(value: string) {
     setSubcategory(value);
-    if (value && value !== "__other__") setTitle(value);
-    else if (value === "__other__") setTitle("");
+    if (value === CUSTOM_SUBCATEGORY) setTitle("");
+    else setTitle(value);
   }
+
+  // A record's type is immutable once saved (see clinicalRecordUpdateSchema), so
+  // unlike the add form this cannot refile the record behind the vet's back.
+  // Picking a service from another type's group is allowed, it just says so, and
+  // the existing recall stays on the type it was raised under.
+  const pickedCategory = services.find((s) => s.name === subcategory)?.category;
+  const mappedType = recordTypeForCategory(pickedCategory);
+  const filingHint =
+    mappedType && mappedType !== recordType
+      ? `${pickedCategory} normally files as ${mappedType}. This record stays a ${recordType}, and so does its recall.`
+      : undefined;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -109,7 +122,7 @@ function EditRecordForm({
           method: "PATCH",
           body: {
             subcategory:
-              subcategory && subcategory !== "__other__"
+              subcategory && subcategory !== CUSTOM_SUBCATEGORY
                 ? subcategory
                 : undefined,
             title,
@@ -138,22 +151,14 @@ function EditRecordForm({
         <Stack spacing={2} sx={{ mt: 1 }}>
           {error && <Alert severity="error">{error}</Alert>}
 
-          {availableServices.length > 0 && (
-            <TextField
-              select
-              label={SUBCATEGORY_LABEL[recordType]}
-              value={subcategory}
-              onChange={(e) => changeSubcategory(e.target.value)}
-              fullWidth
-            >
-              {availableServices.map((s) => (
-                <MenuItem key={s.serviceId} value={s.name}>
-                  {s.name}
-                </MenuItem>
-              ))}
-              <MenuItem value="__other__">Other / custom</MenuItem>
-            </TextField>
-          )}
+          <ServiceSubcategorySelect
+            label={SUBCATEGORY_LABEL[recordType]}
+            value={subcategory}
+            recordType={recordType}
+            services={services}
+            onChange={changeSubcategory}
+            helperText={filingHint}
+          />
 
           <TextField
             label="Title"

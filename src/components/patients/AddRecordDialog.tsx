@@ -15,6 +15,10 @@ import {
 import { apiRequest } from "@/utils/api-client";
 import { RECORD_TYPES, type RecordType } from "@/types/enums";
 import type { ServicePickerOption } from "@/types/entities";
+import { recordTypeForCategory } from "@/constants/clinical";
+import ServiceSubcategorySelect, {
+  CUSTOM_SUBCATEGORY,
+} from "@/components/ui/ServiceSubcategorySelect";
 import VitalsFields from "./VitalsFields";
 
 interface Props {
@@ -87,8 +91,6 @@ function AddRecordForm({ patientId, services, onClose, onSaved }: FormProps) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const availableServices = services.filter((s) => s.category === recordType);
-
   function changeType(type: RecordType) {
     setRecordType(type);
     setSubcategory("");
@@ -96,13 +98,34 @@ function AddRecordForm({ patientId, services, onClose, onSaved }: FormProps) {
     setDetails({ ...EMPTY_DETAILS[type] });
   }
 
+  // Switching type because a service was picked must not throw away anything
+  // already typed, so carry over the fields the two types share rather than
+  // resetting to blanks the way an explicit type change does.
+  function retypeForService(type: RecordType) {
+    setRecordType(type);
+    setDetails((prev) => {
+      const next: Record<string, string> = { ...EMPTY_DETAILS[type] };
+      for (const key of Object.keys(next)) {
+        if (prev[key]) next[key] = prev[key];
+      }
+      return next;
+    });
+  }
+
   function changeSubcategory(value: string) {
     setSubcategory(value);
-    if (value && value !== "__other__") {
-      setTitle(value);
-    } else if (value === "__other__") {
+    if (value === CUSTOM_SUBCATEGORY) {
       setTitle("");
+      return;
     }
+    setTitle(value);
+
+    // The service's category decides how the record is filed, and because a
+    // recall carries its record's type, that is also what routes the reminder.
+    // Unmapped categories leave the vet's own choice of type alone.
+    const picked = services.find((s) => s.name === value);
+    const mapped = recordTypeForCategory(picked?.category);
+    if (mapped && mapped !== recordType) retypeForService(mapped);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -115,7 +138,7 @@ function AddRecordForm({ patientId, services, onClose, onSaved }: FormProps) {
         body: {
           recordType,
           subcategory:
-            subcategory && subcategory !== "__other__"
+            subcategory && subcategory !== CUSTOM_SUBCATEGORY
               ? subcategory
               : undefined,
           title,
@@ -135,6 +158,14 @@ function AddRecordForm({ patientId, services, onClose, onSaved }: FormProps) {
       setSaving(false);
     }
   }
+
+  // Say out loud where the pick just filed the record, so an auto-switched type
+  // reads as a decision the form made rather than a field changing on its own.
+  const pickedCategory = services.find((s) => s.name === subcategory)?.category;
+  const filingHint =
+    pickedCategory && recordTypeForCategory(pickedCategory)
+      ? `${pickedCategory} is filed as ${recordType}. A next due date raises a ${recordType} recall.`
+      : undefined;
 
   return (
     <form onSubmit={handleSubmit}>
@@ -157,20 +188,14 @@ function AddRecordForm({ patientId, services, onClose, onSaved }: FormProps) {
             ))}
           </TextField>
 
-          <TextField
-            select
+          <ServiceSubcategorySelect
             label={SUBCATEGORY_LABEL[recordType]}
             value={subcategory}
-            onChange={(e) => changeSubcategory(e.target.value)}
-            fullWidth
-          >
-            {availableServices.map((s) => (
-              <MenuItem key={s.serviceId} value={s.name}>
-                {s.name}
-              </MenuItem>
-            ))}
-            <MenuItem value="__other__">Other / custom</MenuItem>
-          </TextField>
+            recordType={recordType}
+            services={services}
+            onChange={changeSubcategory}
+            helperText={filingHint}
+          />
 
           <TextField
             label="Title"

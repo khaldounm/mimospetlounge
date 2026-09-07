@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   Alert,
+  Autocomplete,
   Button,
   Dialog,
   DialogActions,
@@ -18,12 +19,17 @@ import {
 import { apiRequest } from "@/utils/api-client";
 import PayoutPreview from "@/components/ui/PayoutPreview";
 import ServiceCostBuilder, { type CostRow } from "./ServiceCostBuilder";
-import { RECORD_TYPES } from "@/types/enums";
+import { recordTypeForCategory } from "@/constants/clinical";
 import type { PartnerDTO, ServiceDTO } from "@/types/entities";
 
 interface Props {
   open: boolean;
   service?: ServiceDTO | null;
+  // Every category already in use, so the picker offers the clinic's own words
+  // (Dental, Diagnostics, Surgery) rather than the four clinical record types.
+  // Free text is still allowed: a growing clinic invents categories, and the
+  // form says what a new one means instead of refusing it.
+  categoryOptions: string[];
   // Whether this user may set who performs the service and on what terms. False
   // hides the section outright: the DTO has already stripped the figures, so
   // there would be nothing to show and nothing the save could carry.
@@ -76,6 +82,7 @@ function toRows(service: ServiceDTO | null | undefined): CostRow[] {
 
 function ServiceForm({
   service,
+  categoryOptions,
   canEditDeal,
   canEditCost,
   onClose,
@@ -201,6 +208,19 @@ function ServiceForm({
     }
   }
 
+  // The clinical record type is DERIVED from the category, never stored beside
+  // it: one column, so the two can never disagree. Saying it here means the vet
+  // sees where records and recalls will land at the moment they choose, and an
+  // unmapped category announces itself now instead of quietly sending records to
+  // "Unfiled" weeks later.
+  const trimmedCategory = category.trim();
+  const filesAs = recordTypeForCategory(trimmedCategory);
+  const categoryHint = !trimmedCategory
+    ? "Uncategorised. Records using it appear under Unfiled services."
+    : filesAs
+      ? `Clinical records using this file as ${filesAs}.`
+      : `"${trimmedCategory}" is a new category. Records using it appear under Unfiled services until it is mapped.`;
+
   return (
     <form onSubmit={handleSubmit}>
       <DialogTitle>{editing ? "Edit service" : "New service"}</DialogTitle>
@@ -215,20 +235,21 @@ function ServiceForm({
             fullWidth
           />
           <Stack direction="row" spacing={2}>
-            <TextField
-              select
-              label="Category"
+            <Autocomplete
+              freeSolo
+              options={categoryOptions}
               value={category}
-              onChange={(e) => setCategory(e.target.value)}
+              onChange={(_, v) => setCategory(v ?? "")}
+              onInputChange={(_, v) => setCategory(v)}
               fullWidth
-            >
-              <MenuItem value="">None</MenuItem>
-              {RECORD_TYPES.map((t) => (
-                <MenuItem key={t} value={t}>
-                  {t}
-                </MenuItem>
-              ))}
-            </TextField>
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Category"
+                  helperText={categoryHint}
+                />
+              )}
+            />
             <TextField
               label="Price"
               type="number"
