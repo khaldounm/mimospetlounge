@@ -74,3 +74,13 @@ prisma/seed-data/dropped-clients.json
 prisma/seed-data/.work/
 
 prisma/seed-data/inventory.json
+
+prisma/seed-data/review-answers-2.csv
+
+prisma/seed-data/review-answers.csv
+
+prisma/seed-data/review-apply-2.sql
+
+prisma/seed-data/review-apply.sql
+
+prisma/seed-data/review-merge-plan.json

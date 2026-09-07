@@ -23,7 +23,9 @@
     "lint": "eslint",
     "lint:fix": "eslint --fix",
     "format": "prettier --write .",
-    "prepare": "[ -n \"$CI\" ] || (prettier --write . && eslint --fix)"
+    "prepare": "[ -n \"$CI\" ] || (prettier --write . && eslint --fix)",
+    "review:apply": "tsx prisma/review-apply.ts",
+    "review:apply2": "tsx prisma/review-apply-2.ts"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
