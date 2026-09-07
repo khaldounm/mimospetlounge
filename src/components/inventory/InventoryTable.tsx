@@ -316,6 +316,17 @@ export default function InventoryTable({
                       <ReviewBadge
                         needsReview={it.needsReview}
                         note={it.reviewNote}
+                        // A flagged item with no barcode is not a job half
+                        // done: the clinic decided these are found by name.
+                        // Saying so beats a "Check" the counter cannot clear.
+                        // Keyed on the note, not on a null barcode: an item
+                        // flagged for its NAME can also lack a barcode, and
+                        // mislabelling that one hides the actual problem.
+                        label={
+                          it.reviewNote?.startsWith("No barcode")
+                            ? "No barcode"
+                            : undefined
+                        }
                       />
                       {it.partnerName && (
                         <Chip

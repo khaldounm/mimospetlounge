@@ -13,16 +13,20 @@ export default function ReviewBadge({
   needsReview,
   note,
   size = "small",
+  label = "Check",
 }: {
   needsReview?: boolean;
   note?: string | null;
   size?: "small" | "medium";
+  // Most flags mean "somebody go and fix this". A few mean a settled state the
+  // counter has to know about, and "Check" reads as a task nobody can close.
+  label?: string;
 }) {
   if (!needsReview) return null;
 
   const chip = (
     <Chip
-      label="Check"
+      label={label}
       color="error"
       size={size}
       variant="outlined"
