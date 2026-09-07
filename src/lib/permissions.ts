@@ -4,6 +4,9 @@ import { isPermissionEnabled } from "@/constants/features";
 
 export interface PermissionHolder {
   permissions?: string[] | null;
+  // Read live from the database by liveSession() on every server-side call, so
+  // it is the role the user holds now, not the one frozen into the cookie.
+  roleName?: string | null;
 }
 
 export function hasPermission(
@@ -25,8 +28,28 @@ export function hasPermission(
 // item cost" lives in one place and moving it is one edit.
 export const COST_PERMISSION = "orders:read";
 
+export const ADMIN_ROLE = "Admin";
+
+export function isAdminRole(
+  user: PermissionHolder | null | undefined,
+): boolean {
+  return user?.roleName === ADMIN_ROLE;
+}
+
+// Cost is Admin-only, and this is a HARD check on the role, not only on the
+// permission.
+//
+// The permission on its own was not enough. `orders:read` is a Settings toggle,
+// and Purchasing write cascades to read (see applyPermissionToggle), so one
+// tick meant to let the front desk receive a delivery also handed reception
+// every supplier price in the app. Margin is the owner's, and no toggle in the
+// UI is allowed to give it away by accident.
+//
+// Both halves are required: the role says who, the permission says the module
+// is on for this deployment. Anyone who genuinely needs cost without being an
+// Admin needs a role change, made deliberately, not a checkbox.
 export function canSeeCost(user: PermissionHolder | null | undefined): boolean {
-  return hasPermission(user, COST_PERMISSION);
+  return isAdminRole(user) && hasPermission(user, COST_PERMISSION);
 }
 
 // Who may see a partner's cut. The rates ARE the clinic's margin on a service

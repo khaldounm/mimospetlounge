@@ -54,6 +54,8 @@ interface Props {
    * item is put on the delivery rather than when the delivery is submitted.
    */
   onOrderChanged: (order: PurchaseOrderDTO) => void;
+  /** Admin only. Gates the cost box on the inline "new item" dialog. */
+  canSeeCost: boolean;
 }
 
 export default function ReceiveOrderDialog({ open, onClose, ...rest }: Props) {
@@ -124,6 +126,7 @@ function ReceiveForm({
   onClose,
   onReceived,
   onOrderChanged,
+  canSeeCost,
 }: FormProps) {
   // Lines added from inside this dialog, for goods that turned up without being
   // ordered. Held here rather than re-seeding the whole form from a refreshed
@@ -1134,6 +1137,7 @@ function ReceiveForm({
       <InventoryItemFormDialog
         open={addingItem}
         canViewSuppliers
+        canSeeCost={canSeeCost}
         canCreateSuppliers={false}
         defaults={{ category: order.category, supplierId: order.supplierId }}
         // The delivery about to be booked is what puts the stock on the shelf.

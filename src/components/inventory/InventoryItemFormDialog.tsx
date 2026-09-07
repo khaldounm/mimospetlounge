@@ -41,6 +41,8 @@ interface Props {
   open: boolean;
   item?: InventoryItemDTO | null;
   canViewSuppliers: boolean;
+  /** Admin only. Gates the cost box, which the server gates again. */
+  canSeeCost: boolean;
   canCreateSuppliers: boolean;
   // Pre-filled on a new item only, for a form opened from somewhere that
   // already knows part of the answer. Goods receipt is the case: the order says
@@ -82,6 +84,7 @@ type FormProps = Omit<Props, "open">;
 function InventoryItemForm({
   item,
   canViewSuppliers,
+  canSeeCost,
   canCreateSuppliers,
   defaults,
   allowOpeningStock = true,
@@ -259,7 +262,9 @@ function InventoryItemForm({
         barcode,
         reorderLevel,
         salePrice,
-        lastCost,
+        // Same reason as supplierId below: omitted for anyone who cannot see a
+        // cost, so saving the form never writes over one they were not shown.
+        ...(canSeeCost ? { lastCost } : {}),
         partnerId,
         partnerCostPct,
         partnerProfitPct,
@@ -396,10 +401,10 @@ function InventoryItemForm({
                 fullWidth
               />
               {/* Cost is the supplier price, so the field follows the same
-                  orders:read gate the DTO does. Without it the box would sit
+                  Admin-only gate the DTO does. Without it the box would sit
                   there empty for clinical staff and invite them to type a
                   figure over a cost they cannot see. */}
-              {canViewSuppliers && (
+              {canSeeCost && (
                 <TextField
                   label="Last cost"
                   type="number"

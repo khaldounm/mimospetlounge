@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { liveSession } from "@/lib/session-user";
 import { prisma } from "@/lib/prisma";
-import { hasPermission } from "@/lib/permissions";
+import { canSeeCost, hasPermission } from "@/lib/permissions";
 import {
   itemExpiryInclude,
   toInventoryItemDTO,
@@ -14,6 +14,8 @@ export default async function InventoryItemPage({ id }: { id: number }) {
   const canWrite = hasPermission(session?.user, "inventory:write");
   const canViewSuppliers = hasPermission(session?.user, "orders:read");
   const canCreateSuppliers = hasPermission(session?.user, "orders:write");
+  // Admin only, and checked on the role rather than the toggle. See canSeeCost.
+  const showCost = canSeeCost(session?.user);
 
   const item = await prisma.inventoryItem.findFirst({
     where: { itemId: id, deletedAt: null },
@@ -31,12 +33,13 @@ export default async function InventoryItemPage({ id }: { id: number }) {
 
   return (
     <InventoryDetail
-      item={toInventoryItemDTO(item, canViewSuppliers)}
+      item={toInventoryItemDTO(item, showCost)}
       initialTransactions={item.transactions.map((t) =>
-        toInventoryTransactionDTO(t, canViewSuppliers),
+        toInventoryTransactionDTO(t, showCost),
       )}
       canWrite={canWrite}
       canViewSuppliers={canViewSuppliers}
+      canSeeCost={showCost}
       canCreateSuppliers={canCreateSuppliers}
       canOrder={canCreateSuppliers}
     />

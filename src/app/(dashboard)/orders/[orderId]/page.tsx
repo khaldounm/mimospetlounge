@@ -22,6 +22,9 @@ export default async function OrderPage({
   const canWrite = hasPermission(session?.user, "orders:write");
   // Receiving moves stock, so it needs the inventory permission too.
   const canReceive = hasPermission(session?.user, "inventory:write");
+  // Purchasing is where cost legitimately belongs, but the answer is still the
+  // one gate: Admin, checked on the role. See canSeeCost.
+  const showCost = canSeeCost(session?.user);
 
   const [order, items, suppliers] = await Promise.all([
     getOrderDetail(id),
@@ -48,9 +51,10 @@ export default async function OrderPage({
       supplierContacts={supplierContacts}
       // Purchasing legitimately needs cost, and canSeeCost is the same
       // orders:read gate this page already sits behind.
-      items={items.map((i) => toInventoryItemDTO(i, canSeeCost(session?.user)))}
+      items={items.map((i) => toInventoryItemDTO(i, showCost))}
       suppliers={suppliers}
       canWrite={canWrite}
+      canSeeCost={showCost}
       canReceive={canReceive}
     />
   );

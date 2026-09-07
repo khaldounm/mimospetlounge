@@ -11,7 +11,7 @@
 import { notFound } from "next/navigation";
 
 import { liveSession } from "@/lib/session-user";
-import { hasPermission } from "@/lib/permissions";
+import { canSeeCost, hasPermission } from "@/lib/permissions";
 import {
   getInventoryCategories,
   listInventory,
@@ -40,6 +40,8 @@ export default async function InventorySegmentPage({
   const session = await liveSession();
   const canWrite = hasPermission(session?.user, "inventory:write");
   const canViewSuppliers = hasPermission(session?.user, "orders:read");
+  // Cost is its own answer, and a harder one: Admin only. See canSeeCost.
+  const showCost = canSeeCost(session?.user);
   const canPurchase = hasPermission(session?.user, "orders:write");
 
   const categories = await getInventoryCategories();
@@ -54,7 +56,7 @@ export default async function InventorySegmentPage({
     : undefined;
 
   const [page, suppliers] = await Promise.all([
-    listInventory({ category, supplier: requested, page: 1 }, canViewSuppliers),
+    listInventory({ category, supplier: requested, page: 1 }, showCost),
     canViewSuppliers ? getActiveSuppliers() : Promise.resolve([]),
   ]);
 
@@ -67,6 +69,7 @@ export default async function InventorySegmentPage({
       activeCategory={category}
       canWrite={canWrite}
       canViewSuppliers={canViewSuppliers}
+      canSeeCost={showCost}
       canCreateSuppliers={canPurchase}
       canOrder={canPurchase}
       suppliers={suppliers}

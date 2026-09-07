@@ -47,6 +47,8 @@ interface Props {
   activeCategory: string | null;
   canWrite: boolean;
   canViewSuppliers: boolean;
+  /** Admin only. Cost is a harder gate than the supplier columns: see canSeeCost. */
+  canSeeCost: boolean;
   canCreateSuppliers: boolean;
   /** orders:write. Gates row selection and the push into a future order. */
   canOrder: boolean;
@@ -63,6 +65,7 @@ export default function InventoryTable({
   activeCategory,
   canWrite,
   canViewSuppliers,
+  canSeeCost,
   canCreateSuppliers,
   canOrder,
   suppliers,
@@ -270,12 +273,11 @@ export default function InventoryTable({
               {canViewSuppliers && <TableCell>Supplier</TableCell>}
               <TableCell align="right">Stock</TableCell>
               <TableCell align="right">Reorder</TableCell>
-              {/* Cost price is what the clinic pays a supplier, so it sits
-                  behind the purchasing permission rather than inventory:read,
-                  which clinical staff hold. */}
-              {canViewSuppliers && (
-                <TableCell align="right">Cost price</TableCell>
-              )}
+              {/* Cost price is what the clinic pays a supplier, and it gives
+                  away the clinic's margin against the sale price beside it. It
+                  is Admin only, checked on the role rather than on a Settings
+                  toggle, and stripped from the DTO as well as hidden here. */}
+              {canSeeCost && <TableCell align="right">Cost price</TableCell>}
               <TableCell align="right">Sale price</TableCell>
               <TableCell>Expiry</TableCell>
             </TableRow>
@@ -352,7 +354,7 @@ export default function InventoryTable({
                     {it.unit ? ` ${it.unit}` : ""}
                   </TableCell>
                   <TableCell align="right">{it.reorderLevel}</TableCell>
-                  {canViewSuppliers && (
+                  {canSeeCost && (
                     <TableCell align="right">
                       {formatMoney(it.lastCost)}
                     </TableCell>
@@ -382,6 +384,7 @@ export default function InventoryTable({
       <InventoryItemFormDialog
         open={dialogOpen}
         canViewSuppliers={canViewSuppliers}
+        canSeeCost={canSeeCost}
         canCreateSuppliers={canCreateSuppliers}
         onClose={() => setDialogOpen(false)}
         onSaved={() => void load(query, lowStockOnly, supplierFilter, page)}

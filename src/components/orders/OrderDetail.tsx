@@ -57,6 +57,8 @@ interface Props {
   supplierContacts: SupplierContactDTO[];
   canWrite: boolean;
   canReceive: boolean;
+  /** Admin only. Gates the cost box on the inline "new item" dialog. */
+  canSeeCost: boolean;
 }
 
 // One editable money row in the totals block. Uncontrolled so typing never
@@ -138,6 +140,7 @@ export default function OrderDetail({
   supplierContacts,
   canWrite,
   canReceive,
+  canSeeCost,
 }: Props) {
   const router = useRouter();
   const [order, setOrder] = useState(initialOrder);
@@ -771,6 +774,7 @@ export default function OrderDetail({
       <InventoryItemFormDialog
         open={addingItem}
         canViewSuppliers
+        canSeeCost={canSeeCost}
         canCreateSuppliers={false}
         defaults={{ category: order.category, supplierId: order.supplierId }}
         // The order is what will put these units on the shelf, when it is
@@ -794,6 +798,7 @@ export default function OrderDetail({
       <ReceiveOrderDialog
         open={receiveOpen}
         order={order}
+        canSeeCost={canSeeCost}
         onClose={() => setReceiveOpen(false)}
         onReceived={(next) => {
           setOrder(next);

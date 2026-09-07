@@ -43,6 +43,8 @@ interface Props {
   initialTransactions: InventoryTransactionDTO[];
   canWrite: boolean;
   canViewSuppliers: boolean;
+  /** Admin only. Cost is a harder gate than the supplier fields: see canSeeCost. */
+  canSeeCost: boolean;
   canCreateSuppliers: boolean;
   /** orders:write. Gates pushing this item into a future order. */
   canOrder: boolean;
@@ -64,6 +66,7 @@ export default function InventoryDetail({
   initialTransactions,
   canWrite,
   canViewSuppliers,
+  canSeeCost,
   canCreateSuppliers,
   canOrder,
 }: Props) {
@@ -193,9 +196,9 @@ export default function InventoryDetail({
           <Grid size={{ xs: 6, sm: 3 }}>
             <Field label="Sale price" value={formatMoney(item.salePrice)} />
           </Grid>
-          {/* Last cost is the supplier price, so it sits behind the purchasing
-              permission rather than inventory:read, which vets hold. */}
-          {canViewSuppliers && (
+          {/* Last cost is the supplier price, and beside the sale price it is
+              the clinic's margin. Admin only, checked on the role. */}
+          {canSeeCost && (
             <Grid size={{ xs: 6, sm: 3 }}>
               <Field label="Last cost" value={formatMoney(item.lastCost)} />
             </Grid>
@@ -259,10 +262,9 @@ export default function InventoryDetail({
               <TableCell>Date</TableCell>
               <TableCell>Type</TableCell>
               <TableCell align="right">Quantity</TableCell>
-              {/* A Received movement's unit cost is the supplier price. */}
-              {canViewSuppliers && (
-                <TableCell align="right">Unit cost</TableCell>
-              )}
+              {/* A Received movement's unit cost is the supplier price, so it
+                  carries the same Admin-only gate the field does. */}
+              {canSeeCost && <TableCell align="right">Unit cost</TableCell>}
               <TableCell>By</TableCell>
               <TableCell>Notes</TableCell>
             </TableRow>
@@ -270,7 +272,7 @@ export default function InventoryDetail({
           <TableBody>
             {transactions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={canViewSuppliers ? 6 : 5} align="center">
+                <TableCell colSpan={canSeeCost ? 6 : 5} align="center">
                   <Typography color="text.secondary" sx={{ py: 2 }}>
                     No movements recorded yet.
                   </Typography>
@@ -289,7 +291,7 @@ export default function InventoryDetail({
                   >
                     {t.quantity > 0 ? `+${t.quantity}` : t.quantity}
                   </TableCell>
-                  {canViewSuppliers && (
+                  {canSeeCost && (
                     <TableCell align="right">
                       {formatMoney(t.unitCost)}
                     </TableCell>
@@ -307,6 +309,7 @@ export default function InventoryDetail({
         open={editOpen}
         item={item}
         canViewSuppliers={canViewSuppliers}
+        canSeeCost={canSeeCost}
         canCreateSuppliers={canCreateSuppliers}
         onClose={() => setEditOpen(false)}
         onSaved={() => router.refresh()}
@@ -316,7 +319,7 @@ export default function InventoryDetail({
         itemId={item.itemId}
         itemName={item.name}
         unit={item.unit}
-        canSeeCost={canViewSuppliers}
+        canSeeCost={canSeeCost}
         onClose={() => setMoveOpen(false)}
         onSaved={() => void reload()}
       />

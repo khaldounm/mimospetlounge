@@ -1,5 +1,5 @@
 import { liveSession } from "@/lib/session-user";
-import { hasPermission } from "@/lib/permissions";
+import { canSeeCost, hasPermission } from "@/lib/permissions";
 import {
   getInventoryCategories,
   listInventory,
@@ -16,6 +16,8 @@ export default async function InventoryPage({
   const session = await liveSession();
   const canWrite = hasPermission(session?.user, "inventory:write");
   const canViewSuppliers = hasPermission(session?.user, "orders:read");
+  // Cost is its own answer, and a harder one: Admin only. See canSeeCost.
+  const showCost = canSeeCost(session?.user);
   // One permission covers both creating a supplier inline and pushing items
   // into a future order.
   const canPurchase = hasPermission(session?.user, "orders:write");
@@ -29,7 +31,7 @@ export default async function InventoryPage({
 
   // No category in the path means every category, still one page at a time.
   const [page, categories, suppliers] = await Promise.all([
-    listInventory({ supplier: requested, page: 1 }, canViewSuppliers),
+    listInventory({ supplier: requested, page: 1 }, showCost),
     getInventoryCategories(),
     canViewSuppliers ? getActiveSuppliers() : Promise.resolve([]),
   ]);
@@ -43,6 +45,7 @@ export default async function InventoryPage({
       activeCategory={null}
       canWrite={canWrite}
       canViewSuppliers={canViewSuppliers}
+      canSeeCost={showCost}
       canCreateSuppliers={canPurchase}
       canOrder={canPurchase}
       suppliers={suppliers}
