@@ -32,6 +32,13 @@ export const CATEGORY_GROUPS = [
 
 export type CategoryGroupKey = (typeof CATEGORY_GROUPS)[number]["key"];
 
+// ---- Services ----
+
+// How many bars the "Top services by revenue" chart shows. The chart is the
+// shape of the money, not the list: the full set of services performed, with
+// how often, is the table beside it.
+export const TOP_SERVICES_LIMIT = 8;
+
 // ---- By-item performance ----
 
 // How many items the leaderboard shows when the section is opened. Ten is what

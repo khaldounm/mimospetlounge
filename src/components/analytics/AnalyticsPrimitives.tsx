@@ -64,14 +64,28 @@ export function KpiGrid({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function ChartGrid({ children }: { children: React.ReactNode }) {
+// Two cards to a row by default. A section with three cards under a full-width
+// one passes columns={3}, which only takes effect at lg: three charts side by
+// side on a laptop are too narrow to read, so they stay two-up until there is
+// room for the third.
+export function ChartGrid({
+  children,
+  columns = 2,
+}: {
+  children: React.ReactNode;
+  columns?: 2 | 3;
+}) {
   return (
     <Box
       sx={{
         display: "grid",
         gap: 2,
         mt: 2,
-        gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+        gridTemplateColumns: {
+          xs: "1fr",
+          md: "1fr 1fr",
+          ...(columns === 3 ? { lg: "repeat(3, 1fr)" } : {}),
+        },
       }}
     >
       {children}

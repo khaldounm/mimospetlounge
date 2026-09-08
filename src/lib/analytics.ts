@@ -21,6 +21,7 @@ import {
   ITEM_SEARCH_LIMIT,
   NON_TRADE_SERVICE_CATEGORIES,
   TOP_ITEMS_LIMIT,
+  TOP_SERVICES_LIMIT,
   UNCATEGORISED_LABEL,
   type CategoryGroupKey,
 } from "@/constants/analytics";
@@ -172,9 +173,8 @@ async function getRevenueSection(
           issuedAt: { gte: from, lt: toExclusive },
         },
       },
-      _sum: { lineTotal: true },
+      _sum: { lineTotal: true, quantity: true },
       orderBy: { _sum: { lineTotal: "desc" } },
-      take: 8,
     }),
   ]);
 
@@ -213,19 +213,46 @@ async function getRevenueSection(
     outstanding: round2(outstandingMap.get(b.key) ?? 0),
   }));
 
-  // Top services by billed revenue within the range.
+  // Every service billed in the range, named once and used twice: the chart
+  // takes the biggest few by money, the table keeps all of them by volume.
   const serviceIds = serviceGroups
     .map((g) => g.serviceId)
     .filter((id): id is number => id !== null);
   const services = await prisma.service.findMany({
     where: { serviceId: { in: serviceIds } },
-    select: { serviceId: true, name: true },
+    select: { serviceId: true, name: true, category: true },
   });
   const serviceNames = new Map(services.map((s) => [s.serviceId, s.name]));
-  const byService = serviceGroups.map((g) => ({
-    label: serviceNames.get(g.serviceId as number) ?? `Service #${g.serviceId}`,
+  const nameOf = (g: (typeof serviceGroups)[number]) =>
+    serviceNames.get(g.serviceId as number) ?? `Service #${g.serviceId}`;
+  // Discount and Unknown legacy product are services only so they can sit on an
+  // invoice line. Counting them as work performed puts "Discount, 166 times" at
+  // the top of the table, which is why the volume list drops the whole
+  // non-trade category. The revenue chart needs no such filter: both carry
+  // negative or nil money and never reach the top by revenue.
+  const nonTradeIds = new Set(
+    services
+      .filter((s) => NON_TRADE_SERVICE_CATEGORIES.has(s.category ?? ""))
+      .map((s) => s.serviceId),
+  );
+
+  // Top services by billed revenue within the range. The groups already arrive
+  // in revenue order.
+  const byService = serviceGroups.slice(0, TOP_SERVICES_LIMIT).map((g) => ({
+    label: nameOf(g),
     value: round2(g._sum.lineTotal?.toNumber() ?? 0),
   }));
+
+  // How often each one was actually done. Quantity rather than line count, so a
+  // single line of "shower small breed x 2" counts as two showers.
+  const serviceVolume = serviceGroups
+    .filter((g) => !nonTradeIds.has(g.serviceId as number))
+    .map((g) => ({
+      label: nameOf(g),
+      times: round2(g._sum.quantity?.toNumber() ?? 0),
+      revenue: round2(g._sum.lineTotal?.toNumber() ?? 0),
+    }))
+    .sort((a, b) => b.times - a.times || a.label.localeCompare(b.label));
 
   return {
     periodCollected: round2(collectedAgg._sum.amount?.toNumber() ?? 0),
@@ -241,6 +268,7 @@ async function getRevenueSection(
     },
     trend,
     byService,
+    serviceVolume,
   };
 }
 

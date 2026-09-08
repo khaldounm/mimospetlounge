@@ -524,6 +524,16 @@ export interface RevenueAnalytics {
   };
   trend: { label: string; collected: number; outstanding: number }[]; // bucketed by issue date over the range
   byService: NamedValue[]; // top services by billed revenue within the range
+  serviceVolume: ServiceVolumeRow[]; // every service billed in the range, most performed first
+}
+
+// One service on the "services performed" table: how often it was done inside
+// the range and what it billed. Counted off invoice lines, so a service the
+// clinic performed but never billed does not appear.
+export interface ServiceVolumeRow {
+  label: string;
+  times: number; // summed line quantity, so a line of 2 counts twice
+  revenue: number;
 }
 
 // One client on the top or lapsed list. Both lists carry the same fields so a
