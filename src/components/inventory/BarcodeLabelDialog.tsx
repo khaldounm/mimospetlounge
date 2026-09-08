@@ -14,7 +14,14 @@ import {
 } from "@mui/material";
 import PrintIcon from "@mui/icons-material/Print";
 import JsBarcode from "jsbarcode";
-import { LABEL_WIDTH_MM, LABEL_HEIGHT_MM } from "@/constants/inventory";
+import {
+  LABEL_WIDTH_MM,
+  LABEL_HEIGHT_MM,
+  LABEL_PADDING_MM,
+  LABEL_GAP_MM,
+  LABEL_NAME_PT,
+  LABEL_BARCODE_MAX_HEIGHT_MM,
+} from "@/constants/inventory";
 import { printHtmlDocument } from "@/utils/print-document";
 
 interface Props {
@@ -42,12 +49,15 @@ export default function BarcodeLabelDialog({
     const canvas = document.createElement("canvas");
     try {
       JsBarcode(canvas, barcode, {
+        // Rendered at 1.5x the on-screen size it needs. The label is only 48mm
+        // wide, so a coarser raster resamples to ragged bars on a 203dpi
+        // thermal head and scans unreliably. Proportions are unchanged.
         format: "EAN13",
-        width: 2,
-        height: 60,
-        fontSize: 16,
+        width: 3,
+        height: 90,
+        fontSize: 24,
         // Symmetric quiet zone so the code sits centred rather than left-heavy.
-        margin: 10,
+        margin: 15,
       });
       return canvas.toDataURL("image/png");
     } catch {
@@ -81,13 +91,15 @@ export default function BarcodeLabelDialog({
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          gap: 1.5mm;
-          padding: 2mm;
+          gap: ${LABEL_GAP_MM}mm;
+          padding: ${LABEL_PADDING_MM}mm;
           page-break-after: always;
           overflow: hidden;
         }
+        /* Without this the final break feeds one blank label off the roll. */
+        .label:last-child { page-break-after: auto; }
         .name {
-          font-size: 9pt;
+          font-size: ${LABEL_NAME_PT}pt;
           font-weight: 600;
           text-align: center;
           width: 100%;
@@ -95,12 +107,15 @@ export default function BarcodeLabelDialog({
           overflow: hidden;
           text-overflow: ellipsis;
         }
+        /* Both dimensions auto so the two maxes scale the code down on aspect:
+           on this stock the height budget binds, not the width. */
         img {
           display: block;
           margin: 0 auto;
-          width: 90%;
-          max-width: ${LABEL_WIDTH_MM}mm;
+          width: auto;
           height: auto;
+          max-width: 92%;
+          max-height: ${LABEL_BARCODE_MAX_HEIGHT_MM}mm;
         }
       </style></head><body>${labels}</body></html>`);
   }
