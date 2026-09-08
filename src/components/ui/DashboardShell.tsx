@@ -284,7 +284,7 @@ export default function DashboardShell({
             {mini ? (
               <Stack spacing={1} sx={{ alignItems: "center" }}>
                 <Tooltip
-                  title={`${displayName} — change password`}
+                  title={`${displayName}: change password`}
                   placement="right"
                 >
                   <IconButton

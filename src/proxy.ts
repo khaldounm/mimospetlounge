@@ -20,9 +20,9 @@ export default auth((req) => {
   if (path.startsWith("/api/auth")) return NextResponse.next();
 
   // Unauthenticated machine endpoints that authorize themselves:
-  //   /api/webhooks/* — verified by provider verify token / signature
-  //   /api/cron/*     — verified by the CRON_SECRET bearer token
-  //   /api/public/*   — verified by a per-request signed token (e.g. invoice PDF
+  //   /api/webhooks/* : verified by provider verify token / signature
+  //   /api/cron/*     : verified by the CRON_SECRET bearer token
+  //   /api/public/*   : verified by a per-request signed token (e.g. invoice PDF
   //                     links fetched by WaSenderApi)
   if (
     path.startsWith("/api/webhooks") ||

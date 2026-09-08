@@ -23,7 +23,7 @@ import { formatRangeLabel, rangeSummary } from "@/utils/date-range";
 import DateRangeControl from "@/components/ui/DateRangeControl";
 import DownloadCsvButton from "@/components/ui/DownloadCsvButton";
 import OfferPickerDialog from "@/components/offers/OfferPickerDialog";
-import AnalyticsSection from "./AnalyticsSection";
+import CollapsibleSection from "@/components/ui/CollapsibleSection";
 import {
   CHART_HEIGHT,
   ChartCard,
@@ -377,7 +377,7 @@ export default function ClientsSection({
     useAnalyticsSection<ClientsAnalytics>("clients", initialRange);
 
   return (
-    <AnalyticsSection
+    <CollapsibleSection
       title="Clients & patients"
       subtitle={`Head count now, activity ${rangeSummary(range).toLowerCase()}`}
       loading={loading}
@@ -464,6 +464,6 @@ export default function ClientsSection({
       ) : (
         <SectionPlaceholder error={error} />
       )}
-    </AnalyticsSection>
+    </CollapsibleSection>
   );
 }

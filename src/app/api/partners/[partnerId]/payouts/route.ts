@@ -8,12 +8,47 @@ import {
   parseId,
   requirePermission,
 } from "@/lib/api";
-import { partnerPayoutInclude, toPartnerPayoutDTO } from "@/lib/partners";
+import {
+  getPartnerPayouts,
+  partnerPayoutInclude,
+  toPartnerPayoutDTO,
+} from "@/lib/partners";
 import { writeAudit } from "@/lib/audit";
-import { partnerPayoutCreateSchema } from "@/schemas/partner";
+import {
+  partnerPagedQuerySchema,
+  partnerPayoutCreateSchema,
+} from "@/schemas/partner";
 
 async function getPartnerId(params: Promise<{ partnerId: string }>) {
   return parseId((await params).partnerId, "partner id");
+}
+
+// One page of the payouts recorded inside the selected range. Range-scoped
+// like the sales ledger beside it, so both tables answer the same period; the
+// balance above them stays cumulative, which is what it has to be.
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ partnerId: string }> },
+) {
+  return handle(async () => {
+    await requirePermission("partners:read");
+    const partnerId = await getPartnerId(params);
+
+    const sp = new URL(request.url).searchParams;
+    const parsed = partnerPagedQuerySchema.safeParse({
+      from: sp.get("from"),
+      to: sp.get("to"),
+      page: sp.get("page") ?? undefined,
+    });
+    if (!parsed.success) {
+      throw new ApiError(400, parsed.error.issues[0].message);
+    }
+    const { from, to, page } = parsed.data;
+
+    return NextResponse.json(
+      await getPartnerPayouts(partnerId, { from, to }, page),
+    );
+  });
 }
 
 export async function POST(

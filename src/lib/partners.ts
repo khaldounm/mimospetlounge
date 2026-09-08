@@ -2,13 +2,17 @@ import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { toDateOnly } from "@/utils/format";
 import { dateOnlyBounds, rangeBounds } from "@/utils/date-range";
+import { PARTNER_PAGE_SIZE } from "@/constants/partner";
 import type {
   AnalyticsRange,
   PartnerDTO,
   PartnerEarningDTO,
   PartnerItemPerformanceDTO,
+  PartnerItemsPage,
   PartnerMoneyDTO,
   PartnerPayoutDTO,
+  PartnerPayoutsPage,
+  PartnerSalesPage,
 } from "@/types/entities";
 import type { InventoryTxType } from "@/types/enums";
 
@@ -143,12 +147,18 @@ type AccrualTotals = {
   // The cost half, for the rare service deal struck at a non-zero cost rate.
   // Usually zero: a vet fronts no capital.
   costPart: Prisma.Decimal;
+  // What the customer was billed for the work, frozen on the accrual. Carried
+  // so the services row can show billed / theirs / clinic's, the same three
+  // figures the stock row shows, rather than their cut floating on its own.
+  // Guarantee rows bill nothing, so only service rows add to it.
+  serviceRevenue: Prisma.Decimal;
 };
 
 const emptyAccruals = (): AccrualTotals => ({
   service: D(0),
   guarantee: D(0),
   costPart: D(0),
+  serviceRevenue: D(0),
 });
 
 const totalAccrued = (a: AccrualTotals): Prisma.Decimal =>
@@ -189,20 +199,21 @@ type PartnerStats = {
 // and sale price at the opposite sign, so summing `-quantity * price` across both
 // nets it to zero without special-casing it. One filter covers a voided invoice
 // and a counter return alike: to a partner's balance they are the same event.
-const SALE_MOVEMENT_FILTER: Prisma.InventoryTransactionWhereInput = {
+export const SALE_MOVEMENT_FILTER: Prisma.InventoryTransactionWhereInput = {
   OR: [{ type: "Sold" }, { type: "Returned", referenceType: "invoice" }],
 };
 
+// The columns every partner figure is derived from. See saleMovementSelect.
+export type SaleMovementRow = {
+  quantity: Prisma.Decimal;
+  unitCost: Prisma.Decimal | null;
+  salePrice: Prisma.Decimal | null;
+  partnerPayable: Prisma.Decimal | null;
+  partnerCostPart: Prisma.Decimal | null;
+};
+
 // Turn a partner's sale movements into the four raw sums.
-function sumSaleMovements(
-  rows: {
-    quantity: Prisma.Decimal;
-    unitCost: Prisma.Decimal | null;
-    salePrice: Prisma.Decimal | null;
-    partnerPayable: Prisma.Decimal | null;
-    partnerCostPart: Prisma.Decimal | null;
-  }[],
-): PartnerTotals {
+function sumSaleMovements(rows: SaleMovementRow[]): PartnerTotals {
   const totals = emptyTotals();
   for (const row of rows) {
     // Sign flip: outbound stock (negative quantity) adds to revenue and cost.
@@ -313,8 +324,15 @@ function toMoneyDTO(stats: PartnerStats): PartnerMoneyDTO {
     earnedToDate: earnedToDate.toFixed(2),
     serviceEarned: stats.accrualsInRange.service.toFixed(2),
     guaranteeEarned: stats.accrualsInRange.guarantee.toFixed(2),
-    serviceEarnedToDate: stats.accrualsToDate.service.toFixed(2),
-    guaranteeEarnedToDate: stats.accrualsToDate.guarantee.toFixed(2),
+    serviceRevenue: stats.accrualsInRange.serviceRevenue.toFixed(2),
+    // Billed minus what the partner is owed for it, which is exactly how the
+    // stock clinicShare above is derived (there the cost cancels out of
+    // grossProfit minus partnerShare, leaving revenue minus accrued). A service
+    // struck at a non-zero cost rate returns capital inside that same accrued
+    // figure, so this stays right without a separate cost term.
+    serviceClinicShare: stats.accrualsInRange.serviceRevenue
+      .minus(stats.accrualsInRange.service)
+      .toFixed(2),
     accrualEarnedInRange: accrualRange.toFixed(2),
     paidToDate: stats.paidToDate.toFixed(2),
     balance: balance.toFixed(2),
@@ -409,7 +427,11 @@ const LIVE_ACCRUAL = { reversedAt: null } as const;
 type AccrualGroup = {
   partnerId: number;
   source: string;
-  _sum: { amount: Prisma.Decimal | null; costPart: Prisma.Decimal | null };
+  _sum: {
+    amount: Prisma.Decimal | null;
+    costPart: Prisma.Decimal | null;
+    revenue: Prisma.Decimal | null;
+  };
 };
 
 function foldAccruals(rows: AccrualGroup[]): Map<number, AccrualTotals> {
@@ -417,9 +439,12 @@ function foldAccruals(rows: AccrualGroup[]): Map<number, AccrualTotals> {
   for (const r of rows) {
     const totals = out.get(r.partnerId) ?? emptyAccruals();
     const amount = r._sum.amount ?? D(0);
-    if (r.source === "guarantee")
+    if (r.source === "guarantee") {
       totals.guarantee = totals.guarantee.plus(amount);
-    else totals.service = totals.service.plus(amount);
+    } else {
+      totals.service = totals.service.plus(amount);
+      totals.serviceRevenue = totals.serviceRevenue.plus(r._sum.revenue ?? 0);
+    }
     totals.costPart = totals.costPart.plus(r._sum.costPart ?? 0);
     out.set(r.partnerId, totals);
   }
@@ -478,13 +503,24 @@ function stockAsAt(
 // Quantities are exact. The valuation uses each item's *current* lastCost, which
 // is the same approximation the live figure already makes: purchase cost is only
 // kept as "most recent", not as a history.
+// Rounded PER ITEM before adding up, because the per-item figure is the one on
+// screen: the By item table prints a capital-held column, and a reader adding
+// that column up has to land on the total above it. Summing the raw products
+// and rounding once at the end is more precise and reads as wrong, since a few
+// items hold a fractional stock whose value falls on half a cent (0.5 of a vial
+// at 4.17 is 2.085), and 345 of those drift the total a cent or two off the
+// column. The displayed figures are the money here, so they define the total.
 function sumShelfValue(
   rows: ShelfRow[],
   movedSince?: Map<number, Prisma.Decimal>,
 ): Prisma.Decimal {
   return rows.reduce(
     (sum, item) =>
-      sum.plus(stockAsAt(item, movedSince).times(item.lastCost ?? 0)),
+      sum.plus(
+        stockAsAt(item, movedSince)
+          .times(item.lastCost ?? 0)
+          .toDecimalPlaces(2),
+      ),
     D(0),
   );
 }
@@ -492,7 +528,19 @@ function sumShelfValue(
 // Shape of the movement rows every partner figure is derived from. Selected once
 // here so the list, the detail page and the per-item breakdown all read the same
 // frozen columns.
-const saleMovementSelect = {
+// What a set of sale movements actually PAID the partner: what the clinic owes
+// for them, less the capital of theirs coming back inside that payment. For a
+// partner who funds nothing the two are the same figure, since none of what
+// they are owed is a stake being returned.
+//
+// Shares sumSaleMovements so the fallback for movements written before the
+// split was frozen is applied here too, rather than drifting from it.
+export function partnerEarningsOf(rows: SaleMovementRow[]): Prisma.Decimal {
+  const totals = sumSaleMovements(rows);
+  return totals.accrued.minus(totals.accruedCost);
+}
+
+export const saleMovementSelect = {
   partnerId: true,
   itemId: true,
   quantity: true,
@@ -591,12 +639,12 @@ export async function getPartnersWithStats(
         ...LIVE_ACCRUAL,
         earnedOn: { gte: dateFrom, lt: dateToExclusive },
       },
-      _sum: { amount: true, costPart: true },
+      _sum: { amount: true, costPart: true, revenue: true },
     }),
     prisma.partnerAccrual.groupBy({
       by: ["partnerId", "source"],
       where: { ...LIVE_ACCRUAL, earnedOn: { lt: dateToExclusive } },
-      _sum: { amount: true, costPart: true },
+      _sum: { amount: true, costPart: true, revenue: true },
     }),
   ]);
 
@@ -647,17 +695,18 @@ export async function getActivePartners(): Promise<PartnerDTO[]> {
   return partners.map((p) => toPartnerDTO(p));
 }
 
-export interface PartnerDetailData {
-  partner: PartnerDTO;
-  itemPerformance: PartnerItemPerformanceDTO[];
-  earnings: PartnerEarningDTO[];
-  payouts: PartnerPayoutDTO[];
-}
+// ---- Partner detail ----
+//
+// One header read, plus three ledgers that each fetch their own page when the
+// section is opened. It used to be a single call that returned every item the
+// partner sources whatever the range: 345 rows and 75 KB for a page whose
+// headline question is "what do I owe them", answered by the figures alone.
 
-export async function getPartnerDetail(
+// Everything above the ledgers: the deal, the period figures and the position.
+export async function getPartnerHeader(
   partnerId: number,
   range: AnalyticsRange,
-): Promise<PartnerDetailData | null> {
+): Promise<{ partner: PartnerDTO } | null> {
   const partner = await prisma.partner.findFirst({
     where: { partnerId, deletedAt: null },
   });
@@ -675,11 +724,10 @@ export async function getPartnerDetail(
     paidToDateAgg,
     items,
     movedSinceGroups,
-    earnings,
-    payouts,
     opening,
     accrualRangeGroups,
     accrualToDateGroups,
+    lastMovement,
   ] = await Promise.all([
     prisma.inventoryTransaction.findMany({
       where: {
@@ -709,17 +757,12 @@ export async function getPartnerDetail(
       _sum: { amount: true },
       where: { partnerId, deletedAt: null, paidOn: { lt: dateToExclusive } },
     }),
+    // Shelf columns only. The header needs what the stock is worth and how many
+    // lines there are, not the lines themselves: those belong to the By item
+    // section, which pages them.
     prisma.inventoryItem.findMany({
       where: { partnerId, deletedAt: null },
-      select: {
-        itemId: true,
-        name: true,
-        unit: true,
-        partnerId: true,
-        currentStock: true,
-        lastCost: true,
-      },
-      orderBy: { name: "asc" },
+      select: { itemId: true, currentStock: true, lastCost: true },
     }),
     // Movements since the range ended, so stock can be rolled back to what was
     // on the shelf then.
@@ -727,26 +770,6 @@ export async function getPartnerDetail(
       by: ["itemId"],
       where: { performedAt: { gte: toExclusive }, item: { partnerId } },
       _sum: { quantity: true },
-    }),
-    prisma.inventoryTransaction.findMany({
-      where: { partnerId },
-      orderBy: { performedAt: "desc" },
-      take: 100,
-      select: {
-        transactionId: true,
-        performedAt: true,
-        type: true,
-        quantity: true,
-        partnerPayable: true,
-        referenceType: true,
-        referenceId: true,
-        item: { select: { name: true } },
-      },
-    }),
-    prisma.partnerPayout.findMany({
-      where: { partnerId, deletedAt: null },
-      orderBy: [{ paidOn: "desc" }, { payoutId: "desc" }],
-      include: partnerPayoutInclude,
     }),
     prisma.openingBalance.findFirst({
       where: { partnerId },
@@ -760,12 +783,19 @@ export async function getPartnerDetail(
         ...LIVE_ACCRUAL,
         earnedOn: { gte: dateFrom, lt: dateToExclusive },
       },
-      _sum: { amount: true, costPart: true },
+      _sum: { amount: true, costPart: true, revenue: true },
     }),
     prisma.partnerAccrual.groupBy({
       by: ["partnerId", "source"],
       where: { partnerId, ...LIVE_ACCRUAL, earnedOn: { lt: dateToExclusive } },
-      _sum: { amount: true, costPart: true },
+      _sum: { amount: true, costPart: true, revenue: true },
+    }),
+    // Ignores the range on purpose: it is the answer to "why is every table
+    // below empty", so it has to be able to point outside the dates.
+    prisma.inventoryTransaction.findFirst({
+      where: { partnerId, ...SALE_MOVEMENT_FILTER },
+      orderBy: { performedAt: "desc" },
+      select: { performedAt: true },
     }),
   ]);
 
@@ -773,9 +803,150 @@ export async function getPartnerDetail(
     movedSinceGroups.map((g) => [g.itemId, g._sum.quantity ?? D(0)]),
   );
 
-  // Per-item performance over the range. Every item the partner sources appears,
-  // including ones that sold nothing, since a line sitting still is exactly what
-  // the clinic wants to spot.
+  const dto = toPartnerDTO(partner, {
+    itemCount: items.length,
+    inRange: sumSaleMovements(rangeRows),
+    toDate: sumSaleMovements(toDateRows),
+    paidInRange: paidInRangeAgg._sum.amount ?? D(0),
+    paidToDate: paidToDateAgg._sum.amount ?? D(0),
+    capitalOnShelf: sumShelfValue(items, movedSince),
+    opening: opening?.amount ?? D(0),
+    openingAsOf: opening?.asOfDate ?? null,
+    accrualsInRange:
+      foldAccruals(accrualRangeGroups).get(partnerId) ?? emptyAccruals(),
+    accrualsToDate:
+      foldAccruals(accrualToDateGroups).get(partnerId) ?? emptyAccruals(),
+  });
+  dto.lastMovementAt = lastMovement?.performedAt.toISOString() ?? null;
+
+  return { partner: dto };
+}
+
+// Where a page of rows starts. The page index is already validated as a
+// non-negative integer by the query schema.
+function skipFor(page: number): number {
+  return page * PARTNER_PAGE_SIZE;
+}
+
+// The sale movements behind the balance, newest first, for the range.
+//
+// Filtered to sale movements like every money figure on the page is, so the
+// ledger and the totals above it can never disagree about what counts. Ordered
+// by id as well as time because a single invoice writes several movements on
+// the same timestamp, and a page boundary landing inside one of those groups
+// would otherwise drop or repeat rows.
+export async function getPartnerSales(
+  partnerId: number,
+  range: AnalyticsRange,
+  page: number,
+): Promise<PartnerSalesPage> {
+  const { from, toExclusive } = rangeBounds(range);
+  const where: Prisma.InventoryTransactionWhereInput = {
+    partnerId,
+    performedAt: { gte: from, lt: toExclusive },
+    ...SALE_MOVEMENT_FILTER,
+  };
+  const [rows, total] = await Promise.all([
+    prisma.inventoryTransaction.findMany({
+      where,
+      orderBy: [{ performedAt: "desc" }, { transactionId: "desc" }],
+      skip: skipFor(page),
+      take: PARTNER_PAGE_SIZE,
+      select: {
+        transactionId: true,
+        performedAt: true,
+        type: true,
+        quantity: true,
+        partnerPayable: true,
+        referenceType: true,
+        referenceId: true,
+        item: { select: { name: true } },
+      },
+    }),
+    prisma.inventoryTransaction.count({ where }),
+  ]);
+  return { rows: rows.map(toPartnerEarningDTO), total };
+}
+
+// Payouts recorded inside the range, newest first.
+export async function getPartnerPayouts(
+  partnerId: number,
+  range: AnalyticsRange,
+  page: number,
+): Promise<PartnerPayoutsPage> {
+  const { from, toExclusive } = dateOnlyBounds(range);
+  const where: Prisma.PartnerPayoutWhereInput = {
+    partnerId,
+    deletedAt: null,
+    paidOn: { gte: from, lt: toExclusive },
+  };
+  const [rows, total] = await Promise.all([
+    prisma.partnerPayout.findMany({
+      where,
+      orderBy: [{ paidOn: "desc" }, { payoutId: "desc" }],
+      skip: skipFor(page),
+      take: PARTNER_PAGE_SIZE,
+      include: partnerPayoutInclude,
+    }),
+    prisma.partnerPayout.count({ where }),
+  ]);
+  return { rows: rows.map(toPartnerPayoutDTO), total };
+}
+
+// Per-item performance over the range, a page at a time. Every item the partner
+// sources appears, including ones that sold nothing, since a line sitting still
+// is exactly what the clinic wants to spot. Ordered by name so the pages are
+// stable and a reader can find a line where they expect it.
+//
+// The movement reads are scoped to the page's items rather than to the whole
+// partner, so a partner with hundreds of lines costs no more to page through
+// than one with a dozen.
+export async function getPartnerItems(
+  partnerId: number,
+  range: AnalyticsRange,
+  page: number,
+): Promise<PartnerItemsPage> {
+  const { from, toExclusive } = rangeBounds(range);
+  const where: Prisma.InventoryItemWhereInput = { partnerId, deletedAt: null };
+
+  const [items, total] = await Promise.all([
+    prisma.inventoryItem.findMany({
+      where,
+      select: {
+        itemId: true,
+        name: true,
+        unit: true,
+        currentStock: true,
+        lastCost: true,
+      },
+      orderBy: { name: "asc" },
+      skip: skipFor(page),
+      take: PARTNER_PAGE_SIZE,
+    }),
+    prisma.inventoryItem.count({ where }),
+  ]);
+  const itemIds = items.map((i) => i.itemId);
+
+  const [rangeRows, movedSinceGroups] = await Promise.all([
+    prisma.inventoryTransaction.findMany({
+      where: {
+        partnerId,
+        itemId: { in: itemIds },
+        performedAt: { gte: from, lt: toExclusive },
+        ...SALE_MOVEMENT_FILTER,
+      },
+      select: saleMovementSelect,
+    }),
+    prisma.inventoryTransaction.groupBy({
+      by: ["itemId"],
+      where: { itemId: { in: itemIds }, performedAt: { gte: toExclusive } },
+      _sum: { quantity: true },
+    }),
+  ]);
+
+  const movedSince = new Map(
+    movedSinceGroups.map((g) => [g.itemId, g._sum.quantity ?? D(0)]),
+  );
   const rowsByItem = new Map<number, typeof rangeRows>();
   for (const row of rangeRows) {
     const bucket = rowsByItem.get(row.itemId);
@@ -783,7 +954,7 @@ export async function getPartnerDetail(
     else rowsByItem.set(row.itemId, [row]);
   }
 
-  const itemPerformance: PartnerItemPerformanceDTO[] = items.map((item) => {
+  const rows: PartnerItemPerformanceDTO[] = items.map((item) => {
     const totals = sumSaleMovements(rowsByItem.get(item.itemId) ?? []);
     // Measured against the stock's cost, exactly as toMoneyDTO does, so these
     // rows add up to the header figures at any pair of rates.
@@ -804,23 +975,5 @@ export async function getPartnerDetail(
     };
   });
 
-  return {
-    partner: toPartnerDTO(partner, {
-      itemCount: items.length,
-      inRange: sumSaleMovements(rangeRows),
-      toDate: sumSaleMovements(toDateRows),
-      paidInRange: paidInRangeAgg._sum.amount ?? D(0),
-      paidToDate: paidToDateAgg._sum.amount ?? D(0),
-      capitalOnShelf: sumShelfValue(items, movedSince),
-      opening: opening?.amount ?? D(0),
-      openingAsOf: opening?.asOfDate ?? null,
-      accrualsInRange:
-        foldAccruals(accrualRangeGroups).get(partnerId) ?? emptyAccruals(),
-      accrualsToDate:
-        foldAccruals(accrualToDateGroups).get(partnerId) ?? emptyAccruals(),
-    }),
-    itemPerformance,
-    earnings: earnings.map(toPartnerEarningDTO),
-    payouts: payouts.map(toPartnerPayoutDTO),
-  };
+  return { rows, total };
 }

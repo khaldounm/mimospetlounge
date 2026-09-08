@@ -5,7 +5,7 @@ import { LineChart } from "@mui/x-charts/LineChart";
 import { useAnalyticsSection } from "@/hooks/useAnalyticsSection";
 import { rangeSummary } from "@/utils/date-range";
 import DateRangeControl from "@/components/ui/DateRangeControl";
-import AnalyticsSection from "./AnalyticsSection";
+import CollapsibleSection from "@/components/ui/CollapsibleSection";
 import {
   CHART_HEIGHT,
   ChartCard,
@@ -31,7 +31,7 @@ export default function ProfitabilitySection({
   );
 
   return (
-    <AnalyticsSection
+    <CollapsibleSection
       title="Profitability"
       subtitle={rangeSummary(range)}
       loading={loading}
@@ -144,6 +144,6 @@ export default function ProfitabilitySection({
       ) : (
         <SectionPlaceholder error={error} />
       )}
-    </AnalyticsSection>
+    </CollapsibleSection>
   );
 }

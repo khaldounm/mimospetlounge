@@ -16,7 +16,7 @@ import { BarChart } from "@mui/x-charts/BarChart";
 import { useAnalyticsSection } from "@/hooks/useAnalyticsSection";
 import { formatRangeLabel, rangeSummary } from "@/utils/date-range";
 import DateRangeControl from "@/components/ui/DateRangeControl";
-import AnalyticsSection from "./AnalyticsSection";
+import CollapsibleSection from "@/components/ui/CollapsibleSection";
 import {
   CHART_HEIGHT,
   ChartCard,
@@ -104,7 +104,7 @@ export default function CategoriesSection({
   const hasData = (comparison?.groups.length ?? 0) > 0;
 
   return (
-    <AnalyticsSection
+    <CollapsibleSection
       title="Category performance"
       subtitle={rangeSummary(range)}
       loading={loading}
@@ -199,6 +199,6 @@ export default function CategoriesSection({
       ) : (
         <SectionPlaceholder error={error} />
       )}
-    </AnalyticsSection>
+    </CollapsibleSection>
   );
 }

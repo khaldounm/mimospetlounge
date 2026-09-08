@@ -9,10 +9,10 @@ interface Props {
   profitOwed: string | undefined;
   /** Shown under the profit line to give it context. */
   profitShareToDate?: string;
-  /** Earned performing services, and from guaranteed days. Shown only when
-   *  there is any, so a pure consignment partner reads exactly as before. */
-  serviceEarnedToDate?: string;
-  guaranteeEarnedToDate?: string;
+  /** Everything earned and everything paid, up to the same date. Shown as a
+   *  pair: both climb together, so neither can be misread as an amount owed. */
+  earnedToDate?: string;
+  paidToDate?: string;
   /** The date this position is stated as at, from `rangeEndLabel`. */
   asOf: string;
 }
@@ -51,13 +51,21 @@ function Row({
 // The one figure the clinic acts on, split into the two things it is actually
 // made of. Reported as a single number, it reads as if the whole amount were the
 // partner's earnings, when most of it is usually the cost half coming back.
+//
+// Every row here is a share OF THE BALANCE, and the two of them always add back
+// to it. That rule used to be broken by two extra rows carrying lifetime
+// earnings from services and guaranteed days: those never fall when a payout is
+// made, so a fully settled partner read as still owing whatever they had ever
+// earned on services, under a heading saying zero. What their earnings were
+// made of is a question about a period, and it is answered by the period
+// figures above this card, where a wider date range asks for more of it.
 export default function OwedBreakdownCard({
   balance,
   capitalOwed,
   profitOwed,
   profitShareToDate,
-  serviceEarnedToDate,
-  guaranteeEarnedToDate,
+  earnedToDate,
+  paidToDate,
   asOf,
 }: Props) {
   const overpaid = Number(profitOwed ?? 0) < 0;
@@ -102,30 +110,27 @@ export default function OwedBreakdownCard({
           }
           negative={overpaid}
         />
-        {/* What made up their earnings, for a partner who does more than
-            consign stock. These are components of what was earned, not a
-            second split of what is owed: payouts still settle capital first,
-            then everything else. */}
-        {Number(serviceEarnedToDate ?? 0) !== 0 && (
-          <Row
-            label="From services"
-            value={serviceEarnedToDate}
-            hint="Their cut of the work they performed"
-          />
-        )}
-        {Number(guaranteeEarnedToDate ?? 0) !== 0 && (
-          <Row
-            label="Day guarantee"
-            value={guaranteeEarnedToDate}
-            hint="Topped up on settled days that earned less than the minimum"
-          />
-        )}
       </Stack>
+
+      {/* What makes a zero read as settled rather than as empty. The pair is
+          safe to show where a lone lifetime figure was not: both sides climb
+          together, so the gap between them is always the balance above. */}
+      {earnedToDate !== undefined && paidToDate !== undefined && (
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: "block", mt: 1.5 }}
+        >
+          {`Earned ${formatMoney(earnedToDate)}, paid ${formatMoney(paidToDate)}${
+            live ? " all time" : ` up to ${asOf}`
+          }.`}
+        </Typography>
+      )}
 
       <Typography
         variant="caption"
         color="text.secondary"
-        sx={{ display: "block", mt: 1.5 }}
+        sx={{ display: "block", mt: 0.5 }}
       >
         {overpaid
           ? "Payouts have gone past what is owed, so the profit line is negative."

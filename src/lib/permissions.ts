@@ -84,7 +84,7 @@ export function hasAnyPermission(
   return permissions.some((p) => hasPermission(user, p));
 }
 
-// Module navigation — each entry requires its `read` permission to be visible
+// Module navigation. Each entry requires its `read` permission to be visible
 // and to access the page/API under its path prefix.
 export interface NavModule {
   href: string;
@@ -245,7 +245,7 @@ export function requiredPermissionForPath(pathname: string): string | null {
   return rule ? rule.permission : null;
 }
 
-// First module the user is allowed to see — used as a post-login landing page.
+// First module the user is allowed to see, used as a post-login landing page.
 export function firstAllowedHref(
   user: PermissionHolder | null | undefined,
 ): string | null {

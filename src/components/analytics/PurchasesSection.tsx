@@ -7,7 +7,7 @@ import DescriptionIcon from "@mui/icons-material/Description";
 import { useAnalyticsSection } from "@/hooks/useAnalyticsSection";
 import { rangeQuery, rangeSummary } from "@/utils/date-range";
 import DateRangeControl from "@/components/ui/DateRangeControl";
-import AnalyticsSection from "./AnalyticsSection";
+import CollapsibleSection from "@/components/ui/CollapsibleSection";
 import {
   CHART_HEIGHT,
   ChartCard,
@@ -31,7 +31,7 @@ export default function PurchasesSection({
   const trendHasData = data?.trend.some((t) => t.billed > 0 || t.paid > 0);
 
   return (
-    <AnalyticsSection
+    <CollapsibleSection
       title="Purchases"
       subtitle={rangeSummary(range)}
       loading={loading}
@@ -143,6 +143,6 @@ export default function PurchasesSection({
       ) : (
         <SectionPlaceholder error={error} />
       )}
-    </AnalyticsSection>
+    </CollapsibleSection>
   );
 }

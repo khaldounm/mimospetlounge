@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { liveSession } from "@/lib/session-user";
 import { hasPermission } from "@/lib/permissions";
-import { getPartnerDetail } from "@/lib/partners";
-import { defaultRange, rangeFromParams } from "@/utils/date-range";
+import { getPartnerHeader } from "@/lib/partners";
+import { rangeFromParams, resolvePreset } from "@/utils/date-range";
+import { PARTNER_DEFAULT_PRESET_ID } from "@/constants/partner";
 import PartnerDetail from "@/components/partners/PartnerDetail";
 
 export const dynamic = "force-dynamic";
@@ -25,16 +26,16 @@ export default async function PartnerPage({
   // figures were being read at, rather than resetting to the default and showing
   // a different one under the same heading.
   const { from, to } = await searchParams;
-  const range = rangeFromParams(from, to) ?? defaultRange();
-  const detail = await getPartnerDetail(id, range);
-  if (!detail) notFound();
+  const range =
+    rangeFromParams(from, to) ?? resolvePreset(PARTNER_DEFAULT_PRESET_ID)!;
+  // Header figures only. The sales, payout and item ledgers each fetch their
+  // own first page when their section is opened.
+  const header = await getPartnerHeader(id, range);
+  if (!header) notFound();
 
   return (
     <PartnerDetail
-      partner={detail.partner}
-      itemPerformance={detail.itemPerformance}
-      earnings={detail.earnings}
-      payouts={detail.payouts}
+      partner={header.partner}
       initialRange={range}
       canWrite={canWrite}
     />

@@ -91,6 +91,8 @@ export default function PartnersTable({
     let capitalOwed = 0;
     let profitOwed = 0;
     let profitShareToDate = 0;
+    let earnedToDate = 0;
+    let paidToDate = 0;
     let capitalDeployed = 0;
     let capitalOnShelf = 0;
     for (const p of partners) {
@@ -104,6 +106,8 @@ export default function PartnersTable({
       capitalOwed += Number(m.capitalOwed);
       profitOwed += Number(m.profitOwed);
       profitShareToDate += Number(m.profitShareToDate);
+      earnedToDate += Number(m.earnedToDate);
+      paidToDate += Number(m.paidToDate);
       capitalDeployed += Number(m.capitalDeployed);
       capitalOnShelf += Number(m.capitalOnShelf);
     }
@@ -116,6 +120,8 @@ export default function PartnersTable({
       capitalOwed,
       profitOwed,
       profitShareToDate,
+      earnedToDate,
+      paidToDate,
       capitalDeployed,
       capitalOnShelf,
     };
@@ -250,6 +256,8 @@ export default function PartnersTable({
           capitalOwed={String(totals.capitalOwed)}
           profitOwed={String(totals.profitOwed)}
           profitShareToDate={String(totals.profitShareToDate)}
+          earnedToDate={String(totals.earnedToDate)}
+          paidToDate={String(totals.paidToDate)}
           asOf={asOf}
         />
       </Box>

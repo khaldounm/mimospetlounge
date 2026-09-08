@@ -67,8 +67,8 @@ type ServiceRow = {
 // rather than two positional booleans: they are both booleans, they gate
 // different things, and at a call site `false, true` says nothing.
 export interface ServiceVisibility {
-  deal: boolean; // partners:read  — who performs it and their cut
-  cost: boolean; // orders:read    — what performing it costs the clinic
+  deal: boolean; // partners:read  (who performs it and their cut)
+  cost: boolean; // orders:read    (what performing it costs the clinic)
 }
 
 type LineItemRow = {

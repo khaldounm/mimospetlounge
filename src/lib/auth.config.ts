@@ -26,7 +26,7 @@ export const authConfig = {
   callbacks: {
     // Persist app-specific fields onto the JWT at sign-in. `authorize` returns
     // a user already enriched with role + permissions, so the token carries
-    // everything middleware needs — no DB call on the Edge.
+    // everything middleware needs, so no DB call on the Edge.
     jwt({ token, user }) {
       if (user) {
         token.userId = user.userId;

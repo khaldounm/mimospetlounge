@@ -8,13 +8,14 @@ import {
   parseId,
   requirePermission,
 } from "@/lib/api";
-import { getPartnerDetail, toPartnerDTO } from "@/lib/partners";
+import { getPartnerHeader, toPartnerDTO } from "@/lib/partners";
 import { writeAudit } from "@/lib/audit";
 import {
   partnerRangeQuerySchema,
   partnerUpdateSchema,
 } from "@/schemas/partner";
-import { defaultRange } from "@/utils/date-range";
+import { resolvePreset } from "@/utils/date-range";
+import { PARTNER_DEFAULT_PRESET_ID } from "@/constants/partner";
 
 async function getPartnerId(params: Promise<{ partnerId: string }>) {
   return parseId((await params).partnerId, "partner id");
@@ -36,12 +37,16 @@ export async function GET(
     if (sp.has("from") && !parsed.success) {
       throw new ApiError(400, parsed.error.issues[0].message);
     }
-    const range = parsed.success ? parsed.data : defaultRange();
+    const range = parsed.success
+      ? parsed.data
+      : resolvePreset(PARTNER_DEFAULT_PRESET_ID)!;
 
-    const detail = await getPartnerDetail(partnerId, range);
-    if (!detail) throw new ApiError(404, "Partner not found");
+    // Header figures only. The sales, payout and item ledgers are their own
+    // endpoints, fetched when their section is opened.
+    const header = await getPartnerHeader(partnerId, range);
+    if (!header) throw new ApiError(404, "Partner not found");
 
-    return NextResponse.json(detail);
+    return NextResponse.json(header);
   });
 }
 

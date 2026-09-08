@@ -6,7 +6,7 @@ import { PieChart } from "@mui/x-charts/PieChart";
 import { useAnalyticsSection } from "@/hooks/useAnalyticsSection";
 import { rangeSummary } from "@/utils/date-range";
 import DateRangeControl from "@/components/ui/DateRangeControl";
-import AnalyticsSection from "./AnalyticsSection";
+import CollapsibleSection from "@/components/ui/CollapsibleSection";
 import {
   CHART_HEIGHT,
   ChartCard,
@@ -28,7 +28,7 @@ export default function BookingsSection({
     useAnalyticsSection<BookingsAnalytics>("bookings", initialRange);
 
   return (
-    <AnalyticsSection
+    <CollapsibleSection
       title="Bookings & operations"
       subtitle={rangeSummary(range)}
       loading={loading}
@@ -93,6 +93,6 @@ export default function BookingsSection({
       ) : (
         <SectionPlaceholder error={error} />
       )}
-    </AnalyticsSection>
+    </CollapsibleSection>
   );
 }

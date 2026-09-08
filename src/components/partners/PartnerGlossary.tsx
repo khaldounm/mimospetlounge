@@ -22,7 +22,7 @@ export default function PartnerGlossary() {
         border: 1,
         borderColor: "divider",
         borderRadius: 2,
-        mb: 2,
+        mb: 1.5,
         "&:before": { display: "none" },
         "&:first-of-type": { borderRadius: 2 },
         "&:last-of-type": { borderRadius: 2 },

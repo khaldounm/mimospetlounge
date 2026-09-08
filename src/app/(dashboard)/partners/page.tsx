@@ -1,7 +1,8 @@
 import { liveSession } from "@/lib/session-user";
 import { hasPermission } from "@/lib/permissions";
 import { getPartnersWithStats } from "@/lib/partners";
-import { defaultRange, rangeFromParams } from "@/utils/date-range";
+import { rangeFromParams, resolvePreset } from "@/utils/date-range";
+import { PARTNER_DEFAULT_PRESET_ID } from "@/constants/partner";
 import PartnersTable from "@/components/partners/PartnersTable";
 
 // Balances change as items sell and payouts are recorded; always render fresh.
@@ -19,7 +20,8 @@ export default async function PartnersPage({
   // linked to, falling back to the default when absent. The first paint is
   // seeded with it so no fetch is needed until the range is changed.
   const { from, to } = await searchParams;
-  const range = rangeFromParams(from, to) ?? defaultRange();
+  const range =
+    rangeFromParams(from, to) ?? resolvePreset(PARTNER_DEFAULT_PRESET_ID)!;
   const partners = await getPartnersWithStats(range);
 
   return (

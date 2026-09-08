@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import {
   Alert,
-  Box,
   Button,
   Chip,
   Stack,
@@ -16,7 +15,8 @@ import {
   Typography,
 } from "@mui/material";
 import { apiRequest } from "@/utils/api-client";
-import { formatMoney } from "@/utils/format";
+import { formatMoney, formatWeekdayDate } from "@/utils/format";
+import CollapsibleSection from "@/components/ui/CollapsibleSection";
 import type { PartnerDayDTO } from "@/types/entities";
 
 type Action = "attend" | "absent" | "settle" | "unsettle";
@@ -93,58 +93,66 @@ export default function PartnerDaysCard({
     .reduce((sum, d) => sum + Number(d.topUp), 0);
 
   return (
-    <Box
-      sx={{ p: 2, border: 1, borderColor: "divider", borderRadius: 1, mt: 2 }}
+    <CollapsibleSection
+      title="Days & guarantee"
+      // Carried in the header so the month, the floor and what has been agreed
+      // are all readable with the section shut.
+      subtitle={
+        dailyMinimum == null
+          ? undefined
+          : `${formatMoney(dailyMinimum)} a day, topped up when the day earns less. Settled days total ${formatMoney(owed)}.`
+      }
+      // The one section on this page that opens on load: attendance is a thing
+      // somebody has to remember to do, and a quiet day nobody marks is a
+      // guarantee nobody claims.
+      defaultExpanded
+      controls={
+        <Stack
+          direction="row"
+          spacing={1}
+          sx={{ alignItems: "center", flexWrap: "wrap", rowGap: 1 }}
+        >
+          <TextField
+            type="month"
+            size="small"
+            label="Month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            slotProps={{ inputLabel: { shrink: true } }}
+          />
+          {canWrite && (
+            <>
+              <TextField
+                type="date"
+                size="small"
+                label="Mark present"
+                value={markDate}
+                onChange={(e) => setMarkDate(e.target.value)}
+                slotProps={{ inputLabel: { shrink: true } }}
+              />
+              <Button
+                variant="outlined"
+                disabled={busy || !markDate}
+                onClick={() => act("attend", markDate)}
+              >
+                They were here
+              </Button>
+            </>
+          )}
+        </Stack>
+      }
     >
-      <Stack
-        direction="row"
-        sx={{ justifyContent: "space-between", alignItems: "center", mb: 2 }}
-      >
-        <Typography variant="h6">Days &amp; guarantee</Typography>
-        <TextField
-          type="month"
-          size="small"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-        />
-      </Stack>
-
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
         </Alert>
       )}
 
-      {dailyMinimum == null ? (
+      {dailyMinimum == null && (
         <Alert severity="info" sx={{ mb: 2 }}>
           This partner is on no daily minimum. Set one on their profile to
           guarantee a floor for the days they are here.
         </Alert>
-      ) : (
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          {formatMoney(dailyMinimum)} a day, topped up when the day&apos;s work
-          earns less. Settled days total {formatMoney(owed)}.
-        </Typography>
-      )}
-
-      {canWrite && (
-        <Stack direction="row" spacing={1} sx={{ mb: 2, alignItems: "center" }}>
-          <TextField
-            type="date"
-            size="small"
-            label="Mark present"
-            value={markDate}
-            onChange={(e) => setMarkDate(e.target.value)}
-            slotProps={{ inputLabel: { shrink: true } }}
-          />
-          <Button
-            variant="outlined"
-            disabled={busy || !markDate}
-            onClick={() => act("attend", markDate)}
-          >
-            They were here
-          </Button>
-        </Stack>
       )}
 
       {days.length === 0 ? (
@@ -165,10 +173,10 @@ export default function PartnerDaysCard({
           <TableBody>
             {days.map((d) => (
               <TableRow key={d.date} hover>
-                <TableCell>{d.date}</TableCell>
+                <TableCell>{formatWeekdayDate(d.date)}</TableCell>
                 <TableCell align="right">{formatMoney(d.earned)}</TableCell>
                 <TableCell align="right">
-                  {Number(d.topUp) > 0 ? formatMoney(d.topUp) : "—"}
+                  {Number(d.topUp) > 0 ? formatMoney(d.topUp) : "-"}
                 </TableCell>
                 <TableCell>
                   {d.settled ? (
@@ -248,6 +256,6 @@ export default function PartnerDaysCard({
           </TableBody>
         </Table>
       )}
-    </Box>
+    </CollapsibleSection>
   );
 }

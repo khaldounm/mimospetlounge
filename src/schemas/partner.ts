@@ -89,6 +89,22 @@ export const partnerRangeQuerySchema = z
     path: ["from"],
   });
 
+// A range plus a zero-based page index, for the paginated ledgers under a
+// partner. Each of those sections asks for its own page, so the range and the
+// page always travel together.
+export const partnerPagedQuerySchema = z
+  .object({
+    from: dateString,
+    to: dateString,
+    page: z.coerce.number().int().min(0).max(100_000).default(0),
+  })
+  .refine((d) => d.from <= d.to, {
+    message: "from must be on or before to",
+    path: ["from"],
+  });
+
+export type PartnerPagedQuery = z.infer<typeof partnerPagedQuerySchema>;
+
 export type PartnerCreateInput = z.infer<typeof partnerCreateSchema>;
 export type PartnerPayoutCreateInput = z.infer<
   typeof partnerPayoutCreateSchema

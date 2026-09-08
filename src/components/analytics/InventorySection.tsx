@@ -5,7 +5,7 @@ import { useAnalyticsSection } from "@/hooks/useAnalyticsSection";
 import { formatQty } from "@/utils/format";
 import { rangeSummary } from "@/utils/date-range";
 import DateRangeControl from "@/components/ui/DateRangeControl";
-import AnalyticsSection from "./AnalyticsSection";
+import CollapsibleSection from "@/components/ui/CollapsibleSection";
 import ItemLookupCard from "./ItemLookupCard";
 import ShelfValueCard from "./ShelfValueCard";
 import {
@@ -63,7 +63,7 @@ export default function InventorySection({
   }));
 
   return (
-    <AnalyticsSection
+    <CollapsibleSection
       title="Inventory"
       subtitle={`Stock now, sales ${rangeSummary(range).toLowerCase()}`}
       loading={stockLoading || itemsLoading}
@@ -180,6 +180,6 @@ export default function InventorySection({
       ) : (
         <SectionPlaceholder error={stockError ?? itemsError} />
       )}
-    </AnalyticsSection>
+    </CollapsibleSection>
   );
 }

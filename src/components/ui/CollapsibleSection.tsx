@@ -21,24 +21,30 @@ interface Props {
   // Called when the section is opened. This is where a section's figures are
   // fetched from, so nothing is computed for one nobody looks at.
   onExpand?: () => void;
+  // Opens on load. For a section whose content is the reason the page was
+  // opened, rather than one somebody goes looking for.
+  defaultExpanded?: boolean;
   children: React.ReactNode;
 }
 
-// One collapsible analytics section, collapsed on load. Boxable sections pass
-// `loading` while a new range is fetching, which shows a top progress bar and
-// dims the stale content.
-export default function AnalyticsSection({
+// One collapsible section, collapsed on load, whose content is fetched the
+// first time it is opened. Range-scoped sections pass `loading` while a new
+// range is fetching, which shows a top progress bar and dims the stale content.
+// Shared by the analytics dashboard and the partner ledgers.
+export default function CollapsibleSection({
   title,
   subtitle,
   loading,
   controls,
   onExpand,
+  defaultExpanded,
   children,
 }: Props) {
   return (
     <Accordion
       disableGutters
       elevation={0}
+      defaultExpanded={defaultExpanded}
       onChange={(_e, expanded) => {
         if (expanded) onExpand?.();
       }}

@@ -100,6 +100,25 @@ export function formatMoneyCompact(
   });
 }
 
+// A calendar day as the counter reads one: "Mon 07/09/2026".
+//
+// Day first, because that is how dates are written here and how the date inputs
+// on the same screens render them. The numbers are assembled from the string's
+// own parts rather than through Intl, so no timezone can shift the day; only the
+// weekday name is localised, and it is read in UTC for the same reason.
+export function formatWeekdayDate(value: string | null | undefined): string {
+  if (!value) return "";
+  const [y, m, d] = value.split("-");
+  if (!y || !m || !d) return value;
+  const date = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)));
+  if (Number.isNaN(date.getTime())) return value;
+  const weekday = date.toLocaleDateString(CLINIC.locale, {
+    weekday: "short",
+    timeZone: "UTC",
+  });
+  return `${weekday} ${d}/${m}/${y}`;
+}
+
 // Human-friendly date for display, from a "YYYY-MM-DD" string.
 export function formatDate(value: string | null | undefined): string {
   if (!value) return "";

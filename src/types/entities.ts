@@ -226,7 +226,7 @@ export interface ServiceCostComponentDTO {
 export interface PartnerDayDTO {
   date: string; // YYYY-MM-DD
   attended: boolean;
-  earned: string; // service accruals that day
+  earned: string; // everything that day paid them: services + their cut of stock
   minimum: string | null; // null when the partner is on no guarantee
   // What settling adds, or what it added if the day is already settled. Frozen
   // once settled, so it stops tracking later corrections.
@@ -1076,10 +1076,14 @@ export interface PartnerMoneyDTO {
   // the pattern above. Kept separate from revenue/grossProfit/partnerShare,
   // which describe consigned STOCK only and would stop adding up if services
   // were folded into them.
-  serviceEarned: string;
-  guaranteeEarned: string;
-  serviceEarnedToDate: string;
-  guaranteeEarnedToDate: string;
+  serviceEarned: string; // their cut of services performed in the range
+  guaranteeEarned: string; // topped up on settled days in the range
+  // The services cut stated the same way the stock cut is, so the two rows read
+  // alike: billed, their share, what the clinic kept. Range-scoped only. There
+  // is deliberately no lifetime version: a cumulative earnings figure printed
+  // beside a balance reads as an amount owed and never falls when it is paid.
+  serviceRevenue: string; // what customers were billed for that work
+  serviceClinicShare: string; // billed minus what the partner is owed for it
   accrualEarnedInRange: string; // services + guarantee over the range
   paidToDate: string;
   balance: string; // earnedToDate minus paidToDate, the amount owed at that point
@@ -1110,6 +1114,11 @@ export interface PartnerDTO {
   isActive: boolean;
   itemCount?: number; // consigned items sourced from this partner
   money?: PartnerMoneyDTO;
+  // When they last moved any stock, at all, ignoring the selected range. The
+  // ledgers below are range-scoped, so on a quiet day every one of them is
+  // empty; this is what lets the page say "nothing in these dates, their last
+  // was on X" instead of reading as "this partner has never sold anything".
+  lastMovementAt?: string | null;
   createdAt: string;
 }
 
@@ -1151,6 +1160,17 @@ export interface PartnerEarningDTO {
   payable: string; // amount owed for this line (negative on a void reversal)
   invoiceNumber: string | null;
 }
+
+// One page of a partner ledger. `total` is the count for the whole range, not
+// the page, so the pager can size itself without a second request.
+export interface PartnerPage<T> {
+  rows: T[];
+  total: number;
+}
+
+export type PartnerSalesPage = PartnerPage<PartnerEarningDTO>;
+export type PartnerPayoutsPage = PartnerPage<PartnerPayoutDTO>;
+export type PartnerItemsPage = PartnerPage<PartnerItemPerformanceDTO>;
 
 // ── Website contact messages ──────────────────────────────
 // An inbound enquiry submitted through the public marketing site's contact
