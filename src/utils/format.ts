@@ -1,4 +1,5 @@
 import {
+  CLINIC,
   CURRENCY,
   LBP_CASH_INCREMENT,
   SECONDARY_CURRENCY,
@@ -16,7 +17,28 @@ export function formatDateTime(value: string | null | undefined): string {
   if (!value) return "";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString(undefined, {
+  return d.toLocaleString(CLINIC.locale, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// Same as formatDateTime, but pinned to the clinic's timezone rather than the
+// runtime's. Documents render twice: in the browser via pdf().toBlob() for the
+// on-screen download, and on the server via renderToBuffer for the /api/public
+// links clients actually receive. Vercel runs UTC, so an unpinned timestamp
+// printed a 14:30 payment as 11:30 on the copy that left the building while
+// staff saw the right time on screen. Use this for any timestamp that can be
+// rendered on the server.
+export function formatClinicDateTime(value: string | null | undefined): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString(CLINIC.locale, {
+    timeZone: CLINIC.timezone,
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -30,7 +52,7 @@ export function formatTime(value: string | null | undefined): string {
   if (!value) return "";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleTimeString(undefined, {
+  return d.toLocaleTimeString(CLINIC.locale, {
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -83,7 +105,7 @@ export function formatDate(value: string | null | undefined): string {
   if (!value) return "";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleDateString(undefined, {
+  return d.toLocaleDateString(CLINIC.locale, {
     year: "numeric",
     month: "short",
     day: "numeric",

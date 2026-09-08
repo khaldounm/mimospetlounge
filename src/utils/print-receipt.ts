@@ -110,9 +110,11 @@ function totalsRow(label: string, value: string, strong = false): string {
 }
 
 function stampNow(): string {
-  return new Date().toLocaleString(undefined, {
+  // Short month rather than a numeric one: the counter hands this to the
+  // customer, and 09/08 reads as 9 August here and 8 September elsewhere.
+  return new Date().toLocaleString(CLINIC.locale, {
     year: "numeric",
-    month: "2-digit",
+    month: "short",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",

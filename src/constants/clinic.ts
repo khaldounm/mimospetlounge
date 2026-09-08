@@ -4,6 +4,12 @@ export const CLINIC = {
   // IANA timezone for the clinic. Used to render dates/times (e.g. appointment
   // reminders) in local time regardless of where the server runs (Vercel = UTC).
   timezone: "Asia/Beirut",
+  // Display locale for dates and times. Pinned rather than left to the
+  // runtime default, which resolves to each machine's own OS/browser locale:
+  // the counter PC rendered 14:30 while other machines rendered 02:30 PM off
+  // the identical deploy. "en-US" matches the 12-hour clock the reminders
+  // already send (see lib/notifications.ts).
+  locale: "en-US",
   // Logo lives in /public. The wide lockup, not the square mark: an invoice
   // header is a wide slot, and the square one was being drawn into it at
   // 170x52, squashing it flat. Dimensions hold the source 1628x601 ratio.

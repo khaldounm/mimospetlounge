@@ -7,7 +7,7 @@ import {
   View,
 } from "@react-pdf/renderer";
 import { CLINIC } from "@/constants/clinic";
-import { formatDate, formatDateTime, formatMoney } from "@/utils/format";
+import { formatClinicDateTime, formatDate, formatMoney } from "@/utils/format";
 import { formatRangeLabel } from "@/utils/date-range";
 import type {
   ClientStatementDTO,
@@ -236,7 +236,7 @@ export default function ClientStatementPdfDocument({
             <View style={styles.metaRow}>
               <Text style={styles.metaLabel}>Issued</Text>
               <Text style={styles.bold}>
-                {formatDateTime(statement.generatedAt)}
+                {formatClinicDateTime(statement.generatedAt)}
               </Text>
             </View>
           </View>

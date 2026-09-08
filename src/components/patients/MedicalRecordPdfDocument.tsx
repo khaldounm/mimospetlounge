@@ -7,7 +7,7 @@ import {
   View,
 } from "@react-pdf/renderer";
 import { CLINIC } from "@/constants/clinic";
-import { formatDate, formatDateTime } from "@/utils/format";
+import { formatClinicDateTime, formatDate } from "@/utils/format";
 import { formatTemperature, formatWeight, vitalsHistory } from "@/utils/vitals";
 import type { MedicalRecordDTO } from "@/types/entities";
 import VitalsPdfChart from "./VitalsPdfChart";
@@ -285,7 +285,7 @@ export default function MedicalRecordPdfDocument({
         <Text style={styles.disclaimer}>
           This record is issued to the registered owner and reflects the
           treatments recorded at {CLINIC.name} as at{" "}
-          {formatDateTime(record.generatedAt)}.
+          {formatClinicDateTime(record.generatedAt)}.
         </Text>
 
         <View style={styles.footer} fixed>

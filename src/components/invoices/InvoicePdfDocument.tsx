@@ -10,8 +10,8 @@ import {
 } from "@react-pdf/renderer";
 import { CLINIC, INVOICE_TERMS, SECONDARY_CURRENCY } from "@/constants/clinic";
 import {
+  formatClinicDateTime,
   formatDate,
-  formatDateTime,
   formatMoney,
   formatSecondaryMoney,
 } from "@/utils/format";
@@ -388,7 +388,7 @@ export default function InvoicePdfDocument({
               {invoice.payments.map((p) => (
                 <View key={p.paymentId} style={styles.tableRow}>
                   <Text style={{ width: "30%" }}>
-                    {formatDateTime(p.paidAt)}
+                    {formatClinicDateTime(p.paidAt)}
                   </Text>
                   <Text style={{ width: "25%" }}>{p.method ?? "-"}</Text>
                   <Text style={{ width: "27%" }}>{p.reference ?? "-"}</Text>

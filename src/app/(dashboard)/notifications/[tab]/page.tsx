@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { CLINIC } from "@/constants/clinic";
 import { liveSession } from "@/lib/session-user";
 import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/permissions";
@@ -76,7 +77,8 @@ async function getComposeOptions() {
   const bookingOptions: BookingOption[] = bookings.map((b) => ({
     bookingId: b.bookingId,
     clientId: b.clientId,
-    label: `${b.patient.name} - ${b.startsAt.toLocaleString("en-US", {
+    label: `${b.patient.name} - ${b.startsAt.toLocaleString(CLINIC.locale, {
+      timeZone: CLINIC.timezone,
       month: "short",
       day: "numeric",
       hour: "2-digit",
