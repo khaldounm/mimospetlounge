@@ -60,6 +60,7 @@ Never use the em dash character `—` (U+2014). This applies to:
 - Comments
 - Commit messages
 - Chat responses to the user
+- Anywhere else
 
 **Why:** Direct user instruction in 2026-04 audit pass: "remove this character — never use it again."
 
