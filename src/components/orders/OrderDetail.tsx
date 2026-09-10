@@ -8,6 +8,7 @@ import {
   Box,
   Button,
   Chip,
+  createFilterOptions,
   IconButton,
   Link,
   MenuItem,
@@ -48,6 +49,15 @@ import InventoryItemFormDialog from "@/components/inventory/InventoryItemFormDia
 import ReceiveOrderDialog from "./ReceiveOrderDialog";
 import SendOrderDialog from "./SendOrderDialog";
 import SupplierReturnDialog from "./SupplierReturnDialog";
+
+// What the picker is searched by. MUI filters on getOptionLabel, which is the
+// name alone, so an admin holding a rep's sheet or the carton itself had no way
+// in: the code is printed on the box and the name is not. Matching is
+// "contains", which also means a scanned EAN-13 finds the GTIN-14 it is stored
+// as, since the 13 digits sit inside the padded 14.
+const filterPickable = createFilterOptions<InventoryItemDTO>({
+  stringify: (o) => `${o.name} ${o.barcode ?? ""}`,
+});
 
 interface Props {
   initialOrder: PurchaseOrderDTO;
@@ -687,6 +697,7 @@ export default function OrderDetail({
         <Stack direction="row" spacing={2} sx={{ mt: 2, alignItems: "center" }}>
           <Autocomplete
             options={pickable}
+            filterOptions={filterPickable}
             value={picked}
             onChange={(_e, value) => setPicked(value)}
             getOptionLabel={(o) => o.name}
