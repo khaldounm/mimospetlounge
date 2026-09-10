@@ -107,7 +107,14 @@ export const config = {
   // clear, and which one stuck would depend on the client. Returning early from
   // the function above does not help: the session read has already happened by
   // then. It has to stay out of the matcher.
+  //
+  // api/auth, api/cron, api/public and api/webhooks are excluded because the
+  // function above already waves all four straight through. Matching them only
+  // bought an invocation that ran NextResponse.next() and nothing else, and on
+  // Vercel middleware bills separately from the function behind it, so every
+  // PDF fetch and every inbound WhatsApp webhook was paying twice for one
+  // request. Behaviour is unchanged: they authorize themselves.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/account/signout|.*\\.[\\w]+$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/auth|api/cron|api/public|api/webhooks|api/account/signout|.*\\.[\\w]+$).*)",
   ],
 };

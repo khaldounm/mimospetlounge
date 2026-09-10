@@ -104,7 +104,7 @@ const rows = parseCsv(readFileSync(IN, "utf8")).slice(1);
 section("Stock written off to zero, then retired");
 for (const r of rows) {
   const [, record, legacyId, name, , earlier, why, , decision] = r;
-  const a = `${earlier} ${decision}`.toLowerCase();
+  // const a = `${earlier} ${decision}`.toLowerCase();
 
   if (why === "Delete would write off stock silently") {
     // "0 stock delete item"

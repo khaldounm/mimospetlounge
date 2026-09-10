@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import Link from "@/components/ui/AppLink";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { useSessionWatch } from "@/hooks/useSessionWatch";

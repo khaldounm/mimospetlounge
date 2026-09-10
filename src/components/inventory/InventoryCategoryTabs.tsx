@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/AppLink";
 import Badge from "@mui/material/Badge";
 import Stack from "@mui/material/Stack";
 import Tab from "@mui/material/Tab";

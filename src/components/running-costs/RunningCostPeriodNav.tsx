@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import Link from "next/link";
+import Link from "@/components/ui/AppLink";
 import { usePathname } from "next/navigation";
 import { Box, Paper, Stack, Typography } from "@mui/material";
 import { MONTH_LABELS_SHORT } from "@/constants/running-cost";

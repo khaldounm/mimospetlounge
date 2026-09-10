@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/ui/AppLink";
 import { usePathname } from "next/navigation";
 import { Tab, Tabs } from "@mui/material";
 import { NOTIFICATION_TABS } from "@/constants/notification";
