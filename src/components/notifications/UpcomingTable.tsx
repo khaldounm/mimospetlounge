@@ -25,7 +25,10 @@ import ScheduleIcon from "@mui/icons-material/Schedule";
 import { apiRequest } from "@/utils/api-client";
 import { formatDateTime } from "@/utils/format";
 import { hasSendAtNote, parseSendAtNote } from "@/utils/booking-notes";
-import { NOTIFICATION_STATUS_COLOR } from "@/constants/notification";
+import {
+  BOOKING_REMINDER_LEAD_DAYS,
+  NOTIFICATION_STATUS_COLOR,
+} from "@/constants/notification";
 import TablePaginationBar from "@/components/ui/TablePaginationBar";
 import type { NotificationDTO, UpcomingBookingDTO } from "@/types/entities";
 
@@ -179,8 +182,8 @@ export default function UpcomingTable({
         sx={{ justifyContent: "space-between", alignItems: "center", mb: 2 }}
       >
         <Typography variant="body2" color="text.secondary">
-          Bookings in the next 7 days. Send a reminder per row, or generate for
-          all eligible bookings at once.
+          Bookings in the next {BOOKING_REMINDER_LEAD_DAYS} days. Send a
+          reminder per row, or generate for all eligible bookings at once.
         </Typography>
         {canWrite && (
           <Button
@@ -273,7 +276,7 @@ export default function UpcomingTable({
                   <Typography color="text.secondary" sx={{ py: 2 }}>
                     {query.trim() || pendingOnly
                       ? "No bookings match these filters."
-                      : "No upcoming bookings in the next 7 days."}
+                      : `No upcoming bookings in the next ${BOOKING_REMINDER_LEAD_DAYS} days.`}
                   </Typography>
                 </TableCell>
               </TableRow>

@@ -3,10 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/api";
 import { toDateOnly } from "@/utils/format";
 import {
-  CONSULTATION_LEAD_DAYS,
-  VACCINATION_LEAD_DAYS,
-  GROOMING_LEAD_DAYS,
-  TREATMENT_LEAD_DAYS,
+  RECALL_LEAD_DAYS,
   RECALL_RECORD_TYPES,
 } from "@/constants/notification";
 import type { DueRecordDTO } from "@/types/entities";
@@ -91,14 +88,8 @@ export async function listDueReminders(
   recordType: RecordType,
 ): Promise<DueRecordDTO[]> {
   const today = startOfToday();
-  const LEAD: Record<string, number> = {
-    Consultation: CONSULTATION_LEAD_DAYS,
-    Vaccination: VACCINATION_LEAD_DAYS,
-    Grooming: GROOMING_LEAD_DAYS,
-    Treatment: TREATMENT_LEAD_DAYS,
-  };
   const cutoff = new Date(today);
-  cutoff.setDate(cutoff.getDate() + (LEAD[recordType] ?? GROOMING_LEAD_DAYS));
+  cutoff.setDate(cutoff.getDate() + RECALL_LEAD_DAYS[recordType]);
 
   const reminders = await prisma.reminder.findMany({
     where: {

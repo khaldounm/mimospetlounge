@@ -201,7 +201,19 @@ export default function DashboardShell({
           }}
         >
           {/* Only the list scrolls, so the footer stays pinned to the bottom. */}
-          <List sx={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+          <List
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: "auto",
+              // macOS hides the scrollbar until you scroll; Windows and Linux
+              // draw a permanent track down the rail. Hide it everywhere, the
+              // list still scrolls with the wheel, trackpad and keyboard.
+              scrollbarWidth: "none",
+              msOverflowStyle: "none",
+              "&::-webkit-scrollbar": { display: "none" },
+            }}
+          >
             {items.map((item) => {
               const selected = pathname.startsWith(item.href);
               return (

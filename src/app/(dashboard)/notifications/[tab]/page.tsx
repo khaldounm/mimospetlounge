@@ -12,6 +12,7 @@ import {
   toTemplateDTO,
 } from "@/lib/notifications";
 import { listDueReminders } from "@/lib/reminders";
+import { RECALL_LEAD_DAYS } from "@/constants/notification";
 import NotificationsTable from "@/components/notifications/NotificationsTable";
 import TemplatesTable from "@/components/notifications/TemplatesTable";
 import UpcomingTable from "@/components/notifications/UpcomingTable";
@@ -139,6 +140,7 @@ export default async function NotificationsTabPage({
       <DueRecordsTable
         initialRecords={records}
         noun={recall.noun}
+        leadDays={RECALL_LEAD_DAYS[recall.recordType]}
         canWrite={canWrite}
         {...options}
       />

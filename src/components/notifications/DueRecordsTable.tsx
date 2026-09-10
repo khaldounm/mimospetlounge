@@ -47,6 +47,9 @@ interface Props {
   initialRecords: DueRecordDTO[];
   // Noun used in column headers / empty state, e.g. "vaccination" / "groom".
   noun: string;
+  // Lead window this tab queries, in days. Printed in the blurb so the sentence
+  // always matches what the list actually contains.
+  leadDays: number;
   clientOptions: ClientOption[];
   patientOptions: PatientOption[];
   bookingOptions: BookingOption[];
@@ -57,6 +60,7 @@ interface Props {
 export default function DueRecordsTable({
   initialRecords,
   noun,
+  leadDays,
   clientOptions,
   patientOptions,
   bookingOptions,
@@ -98,8 +102,8 @@ export default function DueRecordsTable({
   return (
     <Box>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Patients whose next {noun} is due within 30 days or already overdue.
-        Follow up with a recall message, snooze for later, or dismiss.
+        Patients whose next {noun} is due within {leadDays} days or already
+        overdue. Follow up with a recall message, snooze for later, or dismiss.
       </Typography>
 
       {error && (

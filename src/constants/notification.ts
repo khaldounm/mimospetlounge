@@ -38,14 +38,16 @@ export const MISSED_BOOKING_STATUSES: BookingStatus[] = [
   "No Show",
 ];
 
-// Per-type lead windows (days before dueDate a recall becomes visible in its tab).
-export const CONSULTATION_LEAD_DAYS = 7;
-export const VACCINATION_LEAD_DAYS = 7;
-export const GROOMING_LEAD_DAYS = 30;
-export const TREATMENT_LEAD_DAYS = 30;
-
-// Kept for backwards compatibility - used by any code that hasn't been updated.
-export const DUE_RECORD_LEAD_DAYS = 30;
+// Per-type lead windows (days before dueDate a recall becomes visible in its
+// tab). Consultations and vaccinations are booked at short notice, grooming and
+// treatments need more warning. This is the single source of truth: the tab
+// query and the sentence above each table both read it, so they cannot drift.
+export const RECALL_LEAD_DAYS: Record<RecordType, number> = {
+  Consultation: 7,
+  Vaccination: 7,
+  Grooming: 30,
+  Treatment: 30,
+};
 
 // Default snooze length, in days, when staff snooze a recall from the tabs. The
 // recall stays Open but is hidden until the snooze date passes.
