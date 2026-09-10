@@ -5,6 +5,7 @@ import { canSeeCost } from "@/lib/permissions";
 import {
   isUniqueConstraintError,
   itemExpiryInclude,
+  openOpeningBatchTx,
   toInventoryItemDTO,
   toInventoryTransactionDTO,
 } from "@/lib/inventory";
@@ -62,59 +63,71 @@ export async function PATCH(
 
     const existing = await prisma.inventoryItem.findFirst({
       where: { itemId, deletedAt: null },
-      select: { itemId: true },
+      select: { itemId: true, tracksExpiry: true },
     });
     if (!existing) throw new ApiError(404, "Inventory item not found");
 
+    // Switching an item that already holds stock over to batch tracking has to
+    // open a batch for that stock. Sales of a tracked item pick from batches,
+    // so a flag flip on its own leaves the item unsellable, refused as drift
+    // that never happened.
+    const startsTracking = data.tracksExpiry === true && !existing.tracksExpiry;
+
     try {
-      const item = await prisma.inventoryItem.update({
-        where: { itemId },
-        data: {
-          ...(data.name !== undefined ? { name: data.name } : {}),
-          ...(data.category !== undefined ? { category: data.category } : {}),
-          ...(data.barcode !== undefined ? { barcode: data.barcode } : {}),
-          ...(data.unit !== undefined ? { unit: data.unit } : {}),
-          ...(data.reorderLevel !== undefined
-            ? { reorderLevel: data.reorderLevel }
-            : {}),
-          ...(data.salePrice !== undefined
-            ? { salePrice: data.salePrice }
-            : {}),
-          // Cost is orders:read only. Hiding the field is not enough on its
-          // own: a hand-rolled request from someone holding inventory:write
-          // would still set a figure they are not allowed to read back.
-          ...(data.lastCost !== undefined && canSeeCost(session.user)
-            ? { lastCost: data.lastCost }
-            : {}),
-          ...(data.partnerId !== undefined
-            ? { partnerId: data.partnerId }
-            : {}),
-          ...(data.partnerCostPct !== undefined
-            ? { partnerCostPct: data.partnerCostPct }
-            : {}),
-          ...(data.partnerProfitPct !== undefined
-            ? { partnerProfitPct: data.partnerProfitPct }
-            : {}),
-          ...(data.supplierId !== undefined
-            ? { supplierId: data.supplierId }
-            : {}),
-          ...(data.expiryDate !== undefined
-            ? { expiryDate: data.expiryDate }
-            : {}),
-          ...(data.tracksExpiry !== undefined
-            ? { tracksExpiry: data.tracksExpiry }
-            : {}),
-          ...(data.looseUnit !== undefined
-            ? { looseUnit: data.looseUnit }
-            : {}),
-          ...(data.loosePerUnit !== undefined
-            ? { loosePerUnit: data.loosePerUnit }
-            : {}),
-          ...(data.loosePrice !== undefined
-            ? { loosePrice: data.loosePrice }
-            : {}),
-          ...(data.notes !== undefined ? { notes: data.notes } : {}),
-        },
+      const item = await prisma.$transaction(async (tx) => {
+        const updated = await tx.inventoryItem.update({
+          where: { itemId },
+          data: {
+            ...(data.name !== undefined ? { name: data.name } : {}),
+            ...(data.category !== undefined ? { category: data.category } : {}),
+            ...(data.barcode !== undefined ? { barcode: data.barcode } : {}),
+            ...(data.unit !== undefined ? { unit: data.unit } : {}),
+            ...(data.reorderLevel !== undefined
+              ? { reorderLevel: data.reorderLevel }
+              : {}),
+            ...(data.salePrice !== undefined
+              ? { salePrice: data.salePrice }
+              : {}),
+            // Cost is orders:read only. Hiding the field is not enough on its
+            // own: a hand-rolled request from someone holding inventory:write
+            // would still set a figure they are not allowed to read back.
+            ...(data.lastCost !== undefined && canSeeCost(session.user)
+              ? { lastCost: data.lastCost }
+              : {}),
+            ...(data.partnerId !== undefined
+              ? { partnerId: data.partnerId }
+              : {}),
+            ...(data.partnerCostPct !== undefined
+              ? { partnerCostPct: data.partnerCostPct }
+              : {}),
+            ...(data.partnerProfitPct !== undefined
+              ? { partnerProfitPct: data.partnerProfitPct }
+              : {}),
+            ...(data.supplierId !== undefined
+              ? { supplierId: data.supplierId }
+              : {}),
+            ...(data.expiryDate !== undefined
+              ? { expiryDate: data.expiryDate }
+              : {}),
+            ...(data.tracksExpiry !== undefined
+              ? { tracksExpiry: data.tracksExpiry }
+              : {}),
+            ...(data.looseUnit !== undefined
+              ? { looseUnit: data.looseUnit }
+              : {}),
+            ...(data.loosePerUnit !== undefined
+              ? { loosePerUnit: data.loosePerUnit }
+              : {}),
+            ...(data.loosePrice !== undefined
+              ? { loosePrice: data.loosePrice }
+              : {}),
+            ...(data.notes !== undefined ? { notes: data.notes } : {}),
+          },
+        });
+        // Inside the flip's own transaction, so the flag and the batches can
+        // never disagree.
+        if (startsTracking) await openOpeningBatchTx(tx, itemId);
+        return updated;
       });
       await writeAudit(session, {
         action: "update",

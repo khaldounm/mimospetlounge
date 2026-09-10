@@ -263,6 +263,7 @@ async function applyBatchDelta(
   tx: Prisma.TransactionClient,
   params: {
     itemId: number;
+    itemName: string;
     delta: Prisma.Decimal;
     transactionId: number;
     lotNumber?: string | null;
@@ -322,7 +323,7 @@ async function applyBatchDelta(
       // is a rollup that has drifted, and continuing would hide it.
       throw new ApiError(
         409,
-        "Batch records for this item do not match its stock level. Count the item and adjust before selling it.",
+        `Batch records for "${params.itemName}" do not match its stock level: they are ${remaining} short. Count the item and adjust it before selling.`,
       );
     }
     return;
@@ -359,6 +360,49 @@ async function applyBatchDelta(
   await allocate(created.batchId, delta);
 }
 
+/**
+ * Give an item that has just started tracking expiry one undated batch for the
+ * stock already on the shelf, so the rollup and the batch rows start out equal.
+ *
+ * Turning tracking on is a flag flip, but from that moment sales pick from
+ * batches instead of current_stock. An item holding stock with no batches is
+ * therefore armed to fail on its next sale, reported as drift that never
+ * happened. The item dialog already promises this ("whatever is on the shelf
+ * now counts as one undated batch"), and the cutover migration did exactly this
+ * for the items tracked from the start. This is the same thing for an item
+ * switched on later.
+ *
+ * Undated is the honest value: nobody recorded an expiry for stock bought
+ * before anyone was asking for one. It also sorts first under FEFO, so the
+ * unknown pool drains before any dated delivery.
+ *
+ * No batch movement is written, matching the migration: an opening batch is a
+ * starting position, not something that moved.
+ */
+export async function openOpeningBatchTx(
+  tx: Prisma.TransactionClient,
+  itemId: number,
+): Promise<void> {
+  const item = await tx.inventoryItem.findUnique({
+    where: { itemId },
+    select: { currentStock: true },
+  });
+  if (!item) return;
+
+  // Sized to the shortfall rather than to current_stock, so an item switched
+  // off and on again is topped up instead of counted twice.
+  const held = await tx.inventoryBatch.aggregate({
+    where: { itemId },
+    _sum: { quantity: true },
+  });
+  const shortfall = item.currentStock.minus(
+    held._sum.quantity ?? new Prisma.Decimal(0),
+  );
+  if (shortfall.lessThanOrEqualTo(0)) return;
+
+  await tx.inventoryBatch.create({ data: { itemId, quantity: shortfall } });
+}
+
 // Record one stock movement and apply it to current_stock, inside a transaction
 // the caller owns. Receiving a purchase order writes many movements that must
 // all land or none, so it drives this directly rather than calling
@@ -374,7 +418,7 @@ export async function applyStockMovementTx(
       itemId: params.itemId,
       ...(params.allowDeletedItem ? {} : { deletedAt: null }),
     },
-    select: { itemId: true, lastCost: true, tracksExpiry: true },
+    select: { itemId: true, name: true, lastCost: true, tracksExpiry: true },
   });
   if (!item) throw new ApiError(404, "Inventory item not found");
 
@@ -431,6 +475,7 @@ export async function applyStockMovementTx(
   if (item.tracksExpiry) {
     await applyBatchDelta(tx, {
       itemId: params.itemId,
+      itemName: item.name,
       delta: new Prisma.Decimal(delta),
       transactionId: transaction.transactionId,
       lotNumber: params.lotNumber,
