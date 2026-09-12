@@ -114,6 +114,10 @@ export const NOTIFICATION_PLACEHOLDERS: { token: string; label: string }[] = [
   { token: "{{client_name}}", label: "Client full name" },
   { token: "{{client_first_name}}", label: "Client first name" },
   { token: "{{patient_name}}", label: "Patient name" },
+  // The thing the message is about: the recall's record ("CBC test",
+  // "Rabies booster") when following up from a recall tab, the booking type
+  // ("Grooming") on a booking reminder.
+  { token: "{{service_name}}", label: "Service or record name" },
   { token: "{{booking_date}}", label: "Booking date" },
   { token: "{{booking_time}}", label: "Booking time" },
   { token: "{{clinic_name}}", label: "Clinic name" },

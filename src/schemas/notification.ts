@@ -37,6 +37,8 @@ export const notificationCreateSchema = z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/)
       .optional(),
+    // The record a recall is about, for {{service_name}}.
+    serviceName: optionalString(255),
     scheduledAt: optionalDate,
   })
   .refine(

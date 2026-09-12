@@ -44,6 +44,8 @@ export interface ComposePrefill {
   patientId?: number;
   bookingId?: number;
   dueDate?: string;
+  // The recall's record title ("CBC test"), for {{service_name}}.
+  serviceName?: string;
 }
 
 interface Props {
@@ -146,6 +148,7 @@ function ComposeNotificationForm({
             body,
             scheduledAt,
             dueDate: prefill?.dueDate,
+            serviceName: prefill?.serviceName,
           },
         },
       );

@@ -49,6 +49,7 @@ export async function POST(request: Request) {
       body: data.body,
       scheduledAt: data.scheduledAt,
       dueDate: data.dueDate,
+      serviceName: data.serviceName,
     });
 
     await writeAudit(session, {

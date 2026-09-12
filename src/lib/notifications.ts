@@ -82,6 +82,10 @@ export interface RenderContext {
   clientFirstName: string;
   clientLastName: string;
   patientName?: string | null;
+  // What the message is about: the recall's record title, or the booking
+  // type. Empty when neither applies, so the token renders as nothing rather
+  // than as itself.
+  serviceName?: string | null;
   bookingStartsAt?: Date | null;
   dueDate?: string | null;
 }
@@ -101,6 +105,7 @@ export function renderBody(template: string, ctx: RenderContext): string {
     "{{client_name}}": `${ctx.clientFirstName} ${ctx.clientLastName}`.trim(),
     "{{client_first_name}}": ctx.clientFirstName,
     "{{patient_name}}": ctx.patientName ?? "",
+    "{{service_name}}": ctx.serviceName ?? "",
     "{{booking_date}}": at
       ? at.toLocaleDateString("en-US", {
           timeZone: CLINIC.timezone,
@@ -352,6 +357,10 @@ export interface ComposeInput {
   body?: string;
   scheduledAt?: Date;
   dueDate?: string;
+  // The recall's record title when following up from a recall tab; fills
+  // {{service_name}}. Sent by the tab from the row rather than looked up
+  // here, the same way dueDate travels.
+  serviceName?: string;
 }
 
 // Validates the links, renders + freezes the body, resolves + freezes the
@@ -403,6 +412,7 @@ export async function composeNotification(
     clientFirstName: client.firstName,
     clientLastName: client.lastName,
     patientName: patient?.name,
+    serviceName: input.serviceName,
     bookingStartsAt,
     dueDate: input.dueDate,
   });
@@ -692,6 +702,7 @@ function toUpcomingDTO(
           clientFirstName: b.client.firstName,
           clientLastName: b.client.lastName,
           patientName: b.patient.name,
+          serviceName: b.bookingType?.name,
           bookingStartsAt: b.startsAt,
         })
       : null,
@@ -839,6 +850,7 @@ export async function sendBookingReminder(
     include: {
       client: true,
       patient: { select: { name: true } },
+      bookingType: { select: { name: true } },
     },
   });
   if (!booking) throw new ApiError(404, "Booking not found");
@@ -879,6 +891,7 @@ export async function sendBookingReminder(
     clientFirstName: booking.client.firstName,
     clientLastName: booking.client.lastName,
     patientName: booking.patient.name,
+    serviceName: booking.bookingType?.name,
     bookingStartsAt: booking.startsAt,
   });
   const recipient = resolveRecipient(channel, booking.client);

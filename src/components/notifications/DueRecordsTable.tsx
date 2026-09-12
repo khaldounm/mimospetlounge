@@ -237,6 +237,7 @@ export default function DueRecordsTable({
                 clientId: followUp.clientId,
                 patientId: followUp.patientId,
                 dueDate: followUp.nextDueDate,
+                serviceName: followUp.title,
               }
             : undefined
         }
