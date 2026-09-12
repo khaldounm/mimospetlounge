@@ -74,6 +74,9 @@ export const AUDIT_ENTITIES = [
   // One client holding one offer. entityId is the grant, and the payload names
   // the client and the offer, because a grant id means nothing on its own.
   "offer_grant",
+  // A booking type's default reminder template, set from the Templates tab.
+  // entityId is the type, and the payload names the template it now points at.
+  "booking_type",
 ] as const;
 export type AuditEntity = (typeof AUDIT_ENTITIES)[number];
 
@@ -108,6 +111,7 @@ export const AUDIT_ENTITY_LABELS: Record<AuditEntity, string> = {
   audit_log: "Audit log",
   offer: "Offer",
   offer_grant: "Offer given",
+  booking_type: "Booking type",
 };
 
 // MUI Chip colors per action for the viewer.

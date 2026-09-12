@@ -24,6 +24,7 @@ import { BOOKING_STATUSES, type BookingStatus } from "@/types/enums";
 import type {
   BookingDTO,
   BookingTypeOption,
+  ReminderTemplateOption,
   StaffOption,
 } from "@/types/entities";
 import BookingFormDialog from "./BookingFormDialog";
@@ -34,6 +35,7 @@ interface Props {
   initialFrom: string;
   staffOptions: StaffOption[];
   typeOptions: BookingTypeOption[];
+  reminderOptions: ReminderTemplateOption[];
   canWrite: boolean;
 }
 
@@ -54,6 +56,7 @@ export default function BookingsTable({
   initialFrom,
   staffOptions,
   typeOptions,
+  reminderOptions,
   canWrite,
 }: Props) {
   const [bookings, setBookings] = useState(initialBookings);
@@ -181,13 +184,17 @@ export default function BookingsTable({
               <TableCell>Owner</TableCell>
               <TableCell>Staff</TableCell>
               <TableCell>Type</TableCell>
+              {reminderOptions.length > 0 && <TableCell>Reminder</TableCell>}
               <TableCell>Status</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {bookings.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} align="center">
+                <TableCell
+                  colSpan={reminderOptions.length > 0 ? 7 : 6}
+                  align="center"
+                >
                   <Typography color="text.secondary" sx={{ py: 2 }}>
                     No bookings found.
                   </Typography>
@@ -210,6 +217,19 @@ export default function BookingsTable({
                   <TableCell>{b.clientName}</TableCell>
                   <TableCell>{b.staffName ?? "Unassigned"}</TableCell>
                   <TableCell>{b.typeName ?? "-"}</TableCell>
+                  {reminderOptions.length > 0 && (
+                    <TableCell>
+                      {b.reminderTemplateName ?? (
+                        <Typography
+                          component="span"
+                          variant="body2"
+                          color="text.secondary"
+                        >
+                          Type default
+                        </Typography>
+                      )}
+                    </TableCell>
+                  )}
                   <TableCell>
                     <Chip
                       size="small"
@@ -229,6 +249,7 @@ export default function BookingsTable({
         booking={editing}
         staffOptions={staffOptions}
         typeOptions={typeOptions}
+        reminderOptions={reminderOptions}
         onClose={() => setDialogOpen(false)}
         onSaved={() => void load()}
       />

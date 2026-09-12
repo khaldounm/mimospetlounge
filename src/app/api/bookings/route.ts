@@ -2,19 +2,17 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ApiError, handle, parseBody, requirePermission } from "@/lib/api";
 import {
+  bookingInclude,
   isDoubleBookingError,
   resolveEndsAt,
   toBookingDTO,
 } from "@/lib/bookings";
+import {
+  assertReminderTemplate,
+  defaultReminderTemplateId,
+} from "@/lib/notifications";
 import { writeAudit } from "@/lib/audit";
 import { bookingCreateSchema } from "@/schemas/booking";
-
-const bookingInclude = {
-  patient: { select: { patientId: true, name: true } },
-  client: { select: { clientId: true, firstName: true, lastName: true } },
-  staff: { select: { userId: true, firstName: true, lastName: true } },
-  bookingType: { select: { typeId: true, name: true } },
-} as const;
 
 export async function GET(request: Request) {
   return handle(async () => {
@@ -59,6 +57,17 @@ export async function POST(request: Request) {
 
     const endsAt = await resolveEndsAt(data.startsAt, data.endsAt, data.typeId);
 
+    // The reminder the booking will carry: what was picked, else the type's
+    // default, copied on here so the booking keeps saying what it was taken
+    // with even if the type's default changes later.
+    let reminderTemplateId: number | null;
+    if (data.reminderTemplateId != null) {
+      await assertReminderTemplate(data.reminderTemplateId);
+      reminderTemplateId = data.reminderTemplateId;
+    } else {
+      reminderTemplateId = await defaultReminderTemplateId(data.typeId);
+    }
+
     try {
       const booking = await prisma.booking.create({
         data: {
@@ -66,6 +75,7 @@ export async function POST(request: Request) {
           clientId: patient.clientId,
           staffId: data.staffId,
           typeId: data.typeId,
+          reminderTemplateId,
           startsAt: data.startsAt,
           endsAt,
           status: data.status ?? "Scheduled",
@@ -81,6 +91,7 @@ export async function POST(request: Request) {
           patientId: booking.patientId,
           staffId: data.staffId,
           typeId: data.typeId,
+          reminderTemplateId,
           startsAt: data.startsAt,
           endsAt,
           status: booking.status,

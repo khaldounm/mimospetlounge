@@ -69,6 +69,10 @@ export interface BookingDTO {
   staffName: string | null;
   typeId: number | null;
   typeName: string | null;
+  // The reminder template attached to the booking, null when it rides on the
+  // type's default (or the generic reminder) at send time.
+  reminderTemplateId: number | null;
+  reminderTemplateName: string | null;
   startsAt: string;
   endsAt: string;
   status: BookingStatus;
@@ -84,6 +88,16 @@ export interface BookingTypeOption {
   typeId: number;
   name: string;
   durationMinutes: number;
+  // The reminder template a new booking of this type starts with, or null to
+  // fall back to the generic booking reminder.
+  defaultTemplateId: number | null;
+}
+
+// A reminder kind offered wherever a template is attached to a booking: the
+// booking form, the Upcoming tab row, the defaults card on the Templates tab.
+export interface ReminderTemplateOption {
+  templateId: number;
+  name: string;
 }
 
 export interface PatientOption {
@@ -442,8 +456,8 @@ export interface PermissionMatrixDTO {
   grants: Record<string, string[]>;
 }
 
-// An upcoming booking within the reminder window, with the status of its
-// reminder notification (if one has been created from the reminder template).
+// An upcoming booking within the reminder window: the reminder it will send,
+// rendered, and the status of the latest reminder already sent (of any kind).
 export interface UpcomingBookingDTO {
   bookingId: number;
   clientId: number;
@@ -451,12 +465,43 @@ export interface UpcomingBookingDTO {
   patientName: string;
   startsAt: string;
   bookingStatus: BookingStatus;
+  typeName: string | null;
+  // The template attached to the booking itself, null when it rides on the
+  // type's default. What the row's select writes.
+  reminderTemplateId: number | null;
+  // The template the send will actually use (attached, else the type's
+  // default, else the generic one), null when the clinic has none configured.
+  templateId: number | null;
+  templateName: string | null;
+  // Attached by hand to something other than what the type would have said.
+  isOverride: boolean;
+  // The exact message text Send will dispatch, placeholders filled, and the
+  // number it goes to (null when the client has no usable phone).
+  preview: string | null;
+  recipient: string | null;
   reminderStatus: NotificationStatus | null;
   reminderNotificationId: number | null;
   // The booking's free-text note. Carried so the Upcoming tab can read a
   // SENDAT marker out of it (see parseSendAtNote) and show the send time the
   // note asks for next to the Send button.
   notes: string | null;
+}
+
+// One page of the Upcoming tab, as the server renders it and as the API
+// returns it, so a refetch swaps in cleanly.
+export interface UpcomingPageDTO {
+  bookings: UpcomingBookingDTO[];
+  /** Rows matching the filters, across every page. */
+  total: number;
+  // Counted over the whole window, filters aside: the two filter chips read
+  // them, and the answer to "how much is left to send" should not change
+  // because someone typed a name in the search box.
+  windowTotal: number;
+  windowPending: number;
+  // Bookings still to send whose note names a send time, counted across the
+  // whole window rather than the page. The bulk send leaves them alone and
+  // says so; the count is what it says.
+  pendingTimed: number;
 }
 
 // A past booking that was never completed (still Scheduled / Confirmed, or a

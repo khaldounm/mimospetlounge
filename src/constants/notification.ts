@@ -13,14 +13,42 @@ export const RECALL_RECORD_TYPES: RecordType[] = [
   "Treatment",
 ];
 
-// Canonical trigger_event label that marks a template as the appointment
-// reminder template. The reminder generator picks the active template whose
-// triggerEvent equals this value.
+// Canonical trigger_event label that marks a template as a booking reminder.
+// Every active template carrying it is offered as a reminder kind: a booking
+// type names one as its default, a booking carries the one attached to it.
 export const BOOKING_REMINDER_TRIGGER = "booking_reminder";
+
+// What the template form offers for trigger_event, instead of free text. The
+// column is the routing key for reminders, so a typo there used to mean a
+// template that silently never sent. "None" is a template picked by hand in
+// the compose dialog, which is what every recall message is today.
+export const TEMPLATE_TRIGGERS: { value: string; label: string }[] = [
+  { value: "", label: "None (picked by hand)" },
+  { value: BOOKING_REMINDER_TRIGGER, label: "Booking reminder" },
+];
+
+// Reads a stored trigger_event back as its label, falling through to the raw
+// value for anything the select does not know (a label typed before the
+// select existed still shows what it says rather than nothing).
+export function templateTriggerLabel(trigger: string | null): string {
+  if (!trigger) return "-";
+  return TEMPLATE_TRIGGERS.find((t) => t.value === trigger)?.label ?? trigger;
+}
 
 // How far ahead a booking becomes eligible for a reminder. Bookings starting
 // within this window (and not yet past) are listed in the Upcoming tab.
 export const BOOKING_REMINDER_LEAD_DAYS = 7;
+
+// How many reminders the bulk send keeps in flight at once. The provider round
+// trip is the whole cost of a send; three at a time turns a thirty-row morning
+// from a minute into twenty seconds without leaning on the provider.
+export const BULK_REMINDER_CONCURRENCY = 3;
+
+// How many bookings one bulk request takes on before answering. The tab keeps
+// asking until nothing is left, so a long list is a series of short requests
+// rather than one that outlives the function, and the button can count up as
+// it goes. Three waves of three.
+export const BULK_REMINDER_BATCH = 9;
 
 // Booking statuses that should still receive a reminder. Cancelled / Completed
 // / No Show / Checked In are excluded (no point reminding about them).

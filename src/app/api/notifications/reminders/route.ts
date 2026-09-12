@@ -27,27 +27,39 @@ export async function GET(request: Request) {
   });
 }
 
-// Manually trigger reminders: one booking ({ bookingId }) or all eligible
-// upcoming bookings ({ all: true }).
+// Manually trigger reminders: one booking ({ bookingId }, optionally with an
+// edited body) or a batch of the eligible upcoming bookings ({ all: true,
+// skip, limit }), which the tab calls repeatedly until nothing remains.
 export async function POST(request: Request) {
   return handle(async () => {
     const session = await requirePermission("notifications:write");
     const data = await parseBody(request, reminderActionSchema);
 
     if (data.bookingId !== undefined) {
-      const notification = await sendBookingReminder(data.bookingId);
+      const notification = await sendBookingReminder(
+        data.bookingId,
+        undefined,
+        data.body,
+      );
 
       await writeAudit(session, {
         action: "send",
         entity: "notification",
         entityId: notification.notificationId,
-        changes: { bookingId: data.bookingId, status: notification.status },
+        changes: {
+          bookingId: data.bookingId,
+          status: notification.status,
+          ...(data.body !== undefined ? { edited: true } : {}),
+        },
       });
 
       return NextResponse.json({ notification });
     }
 
-    const result = await generateBookingReminders();
+    const result = await generateBookingReminders({
+      skip: data.skip,
+      limit: data.limit,
+    });
     return NextResponse.json({ result });
   });
 }

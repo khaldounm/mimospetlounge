@@ -1,7 +1,38 @@
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/api";
-import type { BookingDTO } from "@/types/entities";
+import type { BookingDTO, BookingTypeOption } from "@/types/entities";
 import type { BookingStatus } from "@/types/enums";
+
+// The booking types as the forms and the Templates tab see them, default
+// reminder included. One place, so every select agrees on what a type offers.
+export async function listBookingTypeOptions(): Promise<BookingTypeOption[]> {
+  const types = await prisma.bookingType.findMany({
+    orderBy: { name: "asc" },
+    select: {
+      typeId: true,
+      name: true,
+      durationMinutes: true,
+      defaultTemplateId: true,
+    },
+  });
+  return types.map((t) => ({
+    typeId: t.typeId,
+    name: t.name,
+    durationMinutes: t.durationMinutes,
+    defaultTemplateId: t.defaultTemplateId,
+  }));
+}
+
+// What every booking read pulls alongside the row: the names the table shows.
+// One definition, shared by the page and both API routes, so a refetch can
+// never come back thinner than the server render.
+export const bookingInclude = {
+  patient: { select: { patientId: true, name: true } },
+  client: { select: { clientId: true, firstName: true, lastName: true } },
+  staff: { select: { userId: true, firstName: true, lastName: true } },
+  bookingType: { select: { typeId: true, name: true } },
+  reminderTemplate: { select: { templateId: true, name: true } },
+} as const;
 
 // Shape returned by the booking queries (using `bookingInclude`). Mapping to a
 // flat DTO here keeps the API response and the server-rendered page identical,
@@ -12,6 +43,7 @@ type BookingWithRelations = {
   clientId: number;
   staffId: number | null;
   typeId: number | null;
+  reminderTemplateId: number | null;
   startsAt: Date;
   endsAt: Date;
   status: string;
@@ -20,6 +52,7 @@ type BookingWithRelations = {
   client: { firstName: string; lastName: string };
   staff: { firstName: string; lastName: string } | null;
   bookingType: { name: string } | null;
+  reminderTemplate: { name: string } | null;
 };
 
 export function toBookingDTO(b: BookingWithRelations): BookingDTO {
@@ -33,6 +66,8 @@ export function toBookingDTO(b: BookingWithRelations): BookingDTO {
     staffName: b.staff ? `${b.staff.firstName} ${b.staff.lastName}` : null,
     typeId: b.typeId,
     typeName: b.bookingType?.name ?? null,
+    reminderTemplateId: b.reminderTemplateId,
+    reminderTemplateName: b.reminderTemplate?.name ?? null,
     startsAt: b.startsAt.toISOString(),
     endsAt: b.endsAt.toISOString(),
     status: b.status as BookingStatus,

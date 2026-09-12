@@ -51,11 +51,30 @@ export const notificationActionSchema = z.object({
   action: z.enum(["send", "retry", "cancel"]),
 });
 
+// A booking type's default reminder template. null clears it, which sends the
+// type's bookings back to the generic template.
+export const reminderDefaultSchema = z.object({
+  templateId: z.number().int().positive().nullable(),
+});
+
+// The reminder kind attached to one booking from the Upcoming row.
+export const reminderAttachSchema = z.object({
+  templateId: z.number().int().positive(),
+});
+
 // Reminder trigger: send one booking's reminder, or generate for all eligible.
+// `body` sends this one booking an edited text instead of the template's, for
+// the "Edit once" in the row preview; the template stays as it was.
+// `skip` and `limit` let the tab run a long list as a series of short
+// requests (see generateBookingReminders), each one comfortably inside a
+// serverless function's time budget.
 export const reminderActionSchema = z
   .object({
     bookingId: z.coerce.number().int().positive().optional(),
+    body: optionalString(5000),
     all: z.coerce.boolean().optional(),
+    skip: z.coerce.number().int().min(0).optional(),
+    limit: z.coerce.number().int().min(1).max(50).optional(),
   })
   .refine((data) => data.all === true || data.bookingId !== undefined, {
     message: "Provide a bookingId or set all=true",
@@ -78,4 +97,6 @@ export const reminderUpdateSchema = z
 export type NotificationCreateInput = z.infer<typeof notificationCreateSchema>;
 export type NotificationActionInput = z.infer<typeof notificationActionSchema>;
 export type ReminderActionInput = z.infer<typeof reminderActionSchema>;
+export type ReminderDefaultInput = z.infer<typeof reminderDefaultSchema>;
+export type ReminderAttachInput = z.infer<typeof reminderAttachSchema>;
 export type ReminderUpdateInput = z.infer<typeof reminderUpdateSchema>;

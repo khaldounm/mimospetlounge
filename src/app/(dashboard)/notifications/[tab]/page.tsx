@@ -5,13 +5,16 @@ import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/permissions";
 import {
   listMissedBookings,
+  listReminderTemplates,
   listUpcomingBookings,
   UPCOMING_PAGE_SIZE,
   notificationInclude,
   toNotificationDTO,
+  toReminderTemplateOption,
   toTemplateDTO,
 } from "@/lib/notifications";
 import { listDueReminders } from "@/lib/reminders";
+import { listBookingTypeOptions } from "@/lib/bookings";
 import { RECALL_LEAD_DAYS } from "@/constants/notification";
 import NotificationsTable from "@/components/notifications/NotificationsTable";
 import TemplatesTable from "@/components/notifications/TemplatesTable";
@@ -108,13 +111,17 @@ export default async function NotificationsTabPage({
   const canWrite = hasPermission(session?.user, "notifications:write");
 
   if (tab === "upcoming") {
-    const upcoming = await listUpcomingBookings();
+    // Opens on what is still to send: the tab is a worklist, and the first
+    // thing on screen should be the work.
+    const [upcoming, reminderTemplates] = await Promise.all([
+      listUpcomingBookings({ pendingOnly: true }),
+      listReminderTemplates(),
+    ]);
     return (
       <UpcomingTable
-        initialUpcoming={upcoming.bookings}
-        initialTotal={upcoming.total}
-        initialPendingTimed={upcoming.pendingTimed}
+        initialPage={upcoming}
         pageSize={UPCOMING_PAGE_SIZE}
+        reminderOptions={reminderTemplates.map(toReminderTemplateOption)}
         canWrite={canWrite}
       />
     );
@@ -148,12 +155,14 @@ export default async function NotificationsTabPage({
   }
 
   if (tab === "templates") {
-    const templates = await prisma.notificationTemplate.findMany({
-      orderBy: { name: "asc" },
-    });
+    const [templates, bookingTypes] = await Promise.all([
+      prisma.notificationTemplate.findMany({ orderBy: { name: "asc" } }),
+      listBookingTypeOptions(),
+    ]);
     return (
       <TemplatesTable
         initialTemplates={templates.map(toTemplateDTO)}
+        bookingTypes={bookingTypes}
         canWrite={canWrite}
       />
     );

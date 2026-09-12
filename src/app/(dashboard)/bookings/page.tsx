@@ -1,17 +1,18 @@
 import { liveSession } from "@/lib/session-user";
 import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/permissions";
-import { toBookingDTO } from "@/lib/bookings";
+import {
+  bookingInclude,
+  listBookingTypeOptions,
+  toBookingDTO,
+} from "@/lib/bookings";
+import {
+  listReminderTemplates,
+  toReminderTemplateOption,
+} from "@/lib/notifications";
 import { toDateOnly } from "@/utils/format";
-import type { BookingTypeOption, StaffOption } from "@/types/entities";
+import type { StaffOption } from "@/types/entities";
 import BookingsTable from "@/components/bookings/BookingsTable";
-
-const bookingInclude = {
-  patient: { select: { patientId: true, name: true } },
-  client: { select: { clientId: true, firstName: true, lastName: true } },
-  staff: { select: { userId: true, firstName: true, lastName: true } },
-  bookingType: { select: { typeId: true, name: true } },
-} as const;
 
 export default async function BookingsPage() {
   const session = await liveSession();
@@ -26,7 +27,7 @@ export default async function BookingsPage() {
   // and so its first refetch asks for the same window rather than widening it.
   const from = toDateOnly(new Date())!;
 
-  const [bookings, staff, types] = await Promise.all([
+  const [bookings, staff, typeOptions, reminderTemplates] = await Promise.all([
     prisma.booking.findMany({
       where: { startsAt: { gte: new Date(from) } },
       orderBy: { startsAt: "asc" },
@@ -37,11 +38,10 @@ export default async function BookingsPage() {
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
       select: { userId: true, firstName: true, lastName: true },
     }),
-    prisma.bookingType.findMany({
-      orderBy: { name: "asc" },
-      select: { typeId: true, name: true, durationMinutes: true },
-    }),
+    listBookingTypeOptions(),
+    listReminderTemplates(),
   ]);
+  const reminderOptions = reminderTemplates.map(toReminderTemplateOption);
 
   const initialBookings = bookings.map(toBookingDTO);
 
@@ -50,18 +50,13 @@ export default async function BookingsPage() {
     label: `${s.firstName} ${s.lastName}`,
   }));
 
-  const typeOptions: BookingTypeOption[] = types.map((t) => ({
-    typeId: t.typeId,
-    name: t.name,
-    durationMinutes: t.durationMinutes,
-  }));
-
   return (
     <BookingsTable
       initialBookings={initialBookings}
       initialFrom={from}
       staffOptions={staffOptions}
       typeOptions={typeOptions}
+      reminderOptions={reminderOptions}
       canWrite={canWrite}
     />
   );

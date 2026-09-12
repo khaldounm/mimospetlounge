@@ -4,9 +4,12 @@ import { ApiError } from "@/lib/api";
 import { CLINIC } from "@/constants/clinic";
 import { normalizePhone } from "@/utils/phone";
 import { hasSendAtNote } from "@/utils/booking-notes";
+import { mapWithConcurrency } from "@/utils/async";
 import {
   BOOKING_REMINDER_LEAD_DAYS,
   BOOKING_REMINDER_TRIGGER,
+  BULK_REMINDER_BATCH,
+  BULK_REMINDER_CONCURRENCY,
   MISSED_BOOKING_STATUSES,
   REMINDER_BOOKING_STATUSES,
 } from "@/constants/notification";
@@ -14,7 +17,9 @@ import type {
   MissedBookingDTO,
   NotificationDTO,
   NotificationTemplateDTO,
+  ReminderTemplateOption,
   UpcomingBookingDTO,
+  UpcomingPageDTO,
 } from "@/types/entities";
 import type {
   BookingStatus,
@@ -431,15 +436,133 @@ function reminderWindow(): { from: Date; to: Date } {
   return { from, to };
 }
 
-// The single active template used for appointment reminders, or null if the
-// clinic hasn't set one up yet. If several are active we take the lowest id for
-// determinism.
-export async function getReminderTemplate(): Promise<TemplateRow | null> {
-  return prisma.notificationTemplate.findFirst({
+// ---- Reminder kinds ----
+//
+// A reminder kind is an active template carrying the booking-reminder trigger.
+// A booking type names one as its default; a booking carries the one attached
+// when it was taken. Resolution for a booking is attached, then the type's
+// default, then the generic template (the lowest-id active kind, which is what
+// every booking used before templates could be attached). Deactivating a
+// template drops it out of the chain without touching the bookings that point
+// at it: SET NULL is for a hard delete, deactivation simply stops resolving.
+
+// Every reminder kind on offer, by name. A handful of rows; read once per
+// request and resolved against in memory rather than joined per booking.
+export async function listReminderTemplates(): Promise<TemplateRow[]> {
+  return prisma.notificationTemplate.findMany({
     where: { isActive: true, triggerEvent: BOOKING_REMINDER_TRIGGER },
-    orderBy: { templateId: "asc" },
+    orderBy: { name: "asc" },
   });
 }
+
+export function toReminderTemplateOption(
+  t: Pick<TemplateRow, "templateId" | "name">,
+): ReminderTemplateOption {
+  return { templateId: t.templateId, name: t.name };
+}
+
+export interface ReminderKinds {
+  /** Active booking-reminder templates by id. */
+  templates: Map<number, TemplateRow>;
+  /** typeId -> templateId, only for types whose default still resolves. */
+  typeDefaults: Map<number, number>;
+  /** The generic template, or null when the clinic has none. */
+  generic: TemplateRow | null;
+  // Every template that ever carried the trigger, active or not. A reminder
+  // sent last month from a kind deactivated since is still a reminder sent, so
+  // the "already sent" rule reads this list and not the live one.
+  allIds: number[];
+}
+
+// Everything needed to resolve the template for any number of bookings, in two
+// small queries (templates and the four-odd booking types). A page of the
+// Upcoming tab and a bulk run both call this once, never per row.
+export async function loadReminderKinds(): Promise<ReminderKinds> {
+  const [templates, types] = await Promise.all([
+    prisma.notificationTemplate.findMany({
+      where: { triggerEvent: BOOKING_REMINDER_TRIGGER },
+      orderBy: { templateId: "asc" },
+    }),
+    prisma.bookingType.findMany({
+      where: { defaultTemplateId: { not: null } },
+      select: { typeId: true, defaultTemplateId: true },
+    }),
+  ]);
+  const active = templates.filter((t) => t.isActive);
+  const byId = new Map(active.map((t) => [t.templateId, t]));
+  const typeDefaults = new Map<number, number>();
+  for (const t of types) {
+    if (t.defaultTemplateId !== null && byId.has(t.defaultTemplateId)) {
+      typeDefaults.set(t.typeId, t.defaultTemplateId);
+    }
+  }
+  return {
+    templates: byId,
+    typeDefaults,
+    // Ordered by id, so the first active one is the lowest.
+    generic: active[0] ?? null,
+    allIds: templates.map((t) => t.templateId),
+  };
+}
+
+// 400 unless the id names a live reminder kind. Anything else would be
+// attached, resolve to nothing at send time, and quietly send the generic
+// text instead of what the person picked.
+export async function assertReminderTemplate(
+  templateId: number,
+): Promise<void> {
+  const template = await prisma.notificationTemplate.findUnique({
+    where: { templateId },
+    select: { isActive: true, triggerEvent: true },
+  });
+  if (
+    !template ||
+    !template.isActive ||
+    template.triggerEvent !== BOOKING_REMINDER_TRIGGER
+  ) {
+    throw new ApiError(400, "Pick an active booking reminder template");
+  }
+}
+
+// The template a new booking of this type starts with, or null when the type
+// has no live default: a default that was deactivated since is not copied
+// onto new bookings, they fall back to the generic reminder at send time.
+export async function defaultReminderTemplateId(
+  typeId: number | undefined,
+): Promise<number | null> {
+  if (typeId === undefined) return null;
+  const type = await prisma.bookingType.findUnique({
+    where: { typeId },
+    select: {
+      defaultTemplate: { select: { templateId: true, isActive: true } },
+    },
+  });
+  const template = type?.defaultTemplate;
+  return template && template.isActive ? template.templateId : null;
+}
+
+// The template a booking's reminder will use: attached, else the type's
+// default, else the generic one. Null only when the clinic has no active
+// booking-reminder template at all.
+export function resolveReminderTemplate(
+  kinds: ReminderKinds,
+  booking: { reminderTemplateId: number | null; typeId: number | null },
+): TemplateRow | null {
+  if (booking.reminderTemplateId !== null) {
+    const attached = kinds.templates.get(booking.reminderTemplateId);
+    if (attached) return attached;
+  }
+  if (booking.typeId !== null) {
+    const defaultId = kinds.typeDefaults.get(booking.typeId);
+    if (defaultId !== undefined) {
+      const byType = kinds.templates.get(defaultId);
+      if (byType) return byType;
+    }
+  }
+  return kinds.generic;
+}
+
+// ---- The Upcoming tab ----
 
 export const UPCOMING_PAGE_SIZE = 25;
 const MAX_UPCOMING_PAGE_SIZE = 100;
@@ -454,17 +577,6 @@ export interface UpcomingQuery {
   pageSize?: number;
 }
 
-export interface UpcomingPage {
-  bookings: UpcomingBookingDTO[];
-  /** Rows matching the filters, across every page. */
-  total: number;
-  // Bookings still to send whose note names a send time, counted across the
-  // whole window rather than the page. The warning it drives is about pressing
-  // Generate reminders, which ignores paging and filters entirely, so a
-  // per-page number would understate the risk on every page but the first.
-  pendingTimed: number;
-}
-
 // Every booking the Upcoming tab is about: inside the reminder window, still
 // expecting the client, and not belonging to an archived one.
 function upcomingWhere(from: Date, to: Date): Prisma.BookingWhereInput {
@@ -475,16 +587,21 @@ function upcomingWhere(from: Date, to: Date): Prisma.BookingWhereInput {
   };
 }
 
-// A booking with no reminder that counts: none at all, or only failed ones.
-// The same rule the generator uses to decide what to send, expressed once so
-// the "Still to send" filter and the bulk run can never disagree.
+// A booking with no reminder that counts: none at all, or only failed ones,
+// from any reminder kind there has ever been. The same rule the bulk send uses
+// to decide what to send and sendBookingReminder uses to refuse a second one,
+// expressed once so the three can never disagree. `in` on the nullable
+// template_id is NULL for hand-composed notifications, which drops them:
+// exactly right, they are not reminders.
 function pendingReminderWhere(
-  templateId: number | undefined,
+  reminderTemplateIds: number[],
 ): Prisma.BookingWhereInput {
-  if (templateId === undefined) return {};
   return {
     notifications: {
-      none: { templateId, status: { not: "Failed" } },
+      none: {
+        templateId: { in: reminderTemplateIds },
+        status: { not: "Failed" },
+      },
     },
   };
 }
@@ -506,6 +623,85 @@ function nameSearchWhere(q: string | undefined): Prisma.BookingWhereInput {
   };
 }
 
+// What one Upcoming row is built from: the names it shows, the phone the
+// preview is addressed to, and the latest reminder of any kind.
+function upcomingInclude(reminderTemplateIds: number[]) {
+  return {
+    client: { select: { firstName: true, lastName: true, phone: true } },
+    patient: { select: { name: true } },
+    bookingType: { select: { name: true } },
+    notifications: {
+      where: { templateId: { in: reminderTemplateIds } },
+      orderBy: { createdAt: "desc" as const },
+      take: 1,
+      select: { notificationId: true, status: true },
+    },
+  };
+}
+
+type UpcomingRow = Prisma.BookingGetPayload<{
+  include: ReturnType<typeof upcomingInclude>;
+}>;
+
+// The row as the tab shows it, template resolved and the message rendered
+// here so nobody has to send blind: the preview is the exact text the Send
+// button will dispatch, addressed to the number it will go to.
+function toUpcomingDTO(
+  b: UpcomingRow,
+  kinds: ReminderKinds,
+): UpcomingBookingDTO {
+  const template = resolveReminderTemplate(kinds, b);
+  // What the booking would have got with nothing attached, so the row can
+  // say when someone chose differently.
+  const byType = resolveReminderTemplate(kinds, {
+    reminderTemplateId: null,
+    typeId: b.typeId,
+  });
+  const reminder = b.notifications[0];
+
+  let recipient: string | null = null;
+  if (template) {
+    try {
+      recipient = resolveRecipient(
+        (template.channel ?? "WhatsApp") as NotificationChannel,
+        { phone: b.client.phone, email: null },
+      );
+    } catch {
+      // No usable number: the row says so and Send will refuse.
+    }
+  }
+
+  return {
+    bookingId: b.bookingId,
+    clientId: b.clientId,
+    clientName: `${b.client.firstName} ${b.client.lastName}`,
+    patientName: b.patient.name,
+    startsAt: b.startsAt.toISOString(),
+    bookingStatus: b.status as BookingStatus,
+    typeName: b.bookingType?.name ?? null,
+    reminderTemplateId: b.reminderTemplateId,
+    templateId: template?.templateId ?? null,
+    templateName: template?.name ?? null,
+    // Attached by hand to something other than what the type would have said.
+    isOverride:
+      template !== null &&
+      b.reminderTemplateId === template.templateId &&
+      template.templateId !== byType?.templateId,
+    preview: template
+      ? renderBody(template.body, {
+          clientFirstName: b.client.firstName,
+          clientLastName: b.client.lastName,
+          patientName: b.patient.name,
+          bookingStartsAt: b.startsAt,
+        })
+      : null,
+    recipient,
+    reminderStatus: reminder ? (reminder.status as NotificationStatus) : null,
+    reminderNotificationId: reminder?.notificationId ?? null,
+    notes: b.notes,
+  };
+}
+
 // One page of eligible bookings inside the reminder window, each with the
 // status of its most recent reminder. Used by the Upcoming tab.
 //
@@ -514,78 +710,85 @@ function nameSearchWhere(q: string | undefined): Prisma.BookingWhereInput {
 // along with a notification lookup per row.
 export async function listUpcomingBookings(
   query: UpcomingQuery = {},
-): Promise<UpcomingPage> {
+): Promise<UpcomingPageDTO> {
   const { from, to } = reminderWindow();
-  const template = await getReminderTemplate();
+  const kinds = await loadReminderKinds();
   const pageSize = Math.min(
     query.pageSize ?? UPCOMING_PAGE_SIZE,
     MAX_UPCOMING_PAGE_SIZE,
   );
   const page = Math.max(query.page ?? 1, 1);
 
-  const pending = pendingReminderWhere(template?.templateId);
+  const windowWhere = upcomingWhere(from, to);
+  const pendingWhere = {
+    ...windowWhere,
+    ...pendingReminderWhere(kinds.allIds),
+  };
+  const searching = Boolean(query.q?.trim());
   const where: Prisma.BookingWhereInput = {
-    ...upcomingWhere(from, to),
+    ...(query.pendingOnly ? pendingWhere : windowWhere),
     ...nameSearchWhere(query.q),
-    ...(query.pendingOnly ? pending : {}),
   };
 
-  const [bookings, total, marked] = await Promise.all([
-    prisma.booking.findMany({
-      where,
-      orderBy: { startsAt: "asc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      include: {
-        client: { select: { firstName: true, lastName: true } },
-        patient: { select: { name: true } },
-        notifications: template
-          ? {
-              where: { templateId: template.templateId },
-              orderBy: { createdAt: "desc" },
-              take: 1,
-              select: { notificationId: true, status: true },
-            }
-          : false,
-      },
-    }),
-    prisma.booking.count({ where }),
-    // Narrowed to notes that could carry the marker before the exact rule is
-    // applied in JS, so the precise test runs over a handful of rows instead of
-    // the window. The two substrings are what SEND_AT_MARKER can match on.
-    prisma.booking.findMany({
-      where: {
-        ...upcomingWhere(from, to),
-        ...pending,
-        OR: [
-          { notes: { contains: "sendat", mode: "insensitive" } },
-          { notes: { contains: "send at", mode: "insensitive" } },
-        ],
-      },
-      select: { notes: true },
-    }),
-  ]);
+  const [bookings, windowTotal, windowPending, filtered, marked] =
+    await Promise.all([
+      prisma.booking.findMany({
+        where,
+        orderBy: { startsAt: "asc" },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: upcomingInclude(kinds.allIds),
+      }),
+      prisma.booking.count({ where: windowWhere }),
+      prisma.booking.count({ where: pendingWhere }),
+      // With no search the filtered total is one of the two window counts
+      // already being taken, so the third count only runs when it differs.
+      searching ? prisma.booking.count({ where }) : null,
+      // Narrowed to notes that could carry the marker before the exact rule is
+      // applied in JS, so the precise test runs over a handful of rows instead
+      // of the window. The two substrings are what SEND_AT_MARKER can match on.
+      prisma.booking.findMany({
+        where: {
+          ...pendingWhere,
+          OR: [
+            { notes: { contains: "sendat", mode: "insensitive" } },
+            { notes: { contains: "send at", mode: "insensitive" } },
+          ],
+        },
+        select: { notes: true },
+      }),
+    ]);
 
   return {
-    bookings: bookings.map((b) => {
-      const reminder = template ? b.notifications[0] : undefined;
-      return {
-        bookingId: b.bookingId,
-        clientId: b.clientId,
-        clientName: `${b.client.firstName} ${b.client.lastName}`,
-        patientName: b.patient.name,
-        startsAt: b.startsAt.toISOString(),
-        bookingStatus: b.status as BookingStatus,
-        reminderStatus: reminder
-          ? (reminder.status as NotificationStatus)
-          : null,
-        reminderNotificationId: reminder?.notificationId ?? null,
-        notes: b.notes,
-      };
-    }),
-    total,
+    bookings: bookings.map((b) => toUpcomingDTO(b, kinds)),
+    total: filtered ?? (query.pendingOnly ? windowPending : windowTotal),
+    windowTotal,
+    windowPending,
     pendingTimed: marked.filter((m) => hasSendAtNote(m.notes)).length,
   };
+}
+
+// Attaches a reminder kind to a booking from the Upcoming row. Returns the row
+// re-resolved and re-rendered, so the preview on screen is the text that will
+// now go out rather than the text that would have.
+export async function attachReminderTemplate(
+  bookingId: number,
+  templateId: number,
+): Promise<UpcomingBookingDTO> {
+  await assertReminderTemplate(templateId);
+  const kinds = await loadReminderKinds();
+  const existing = await prisma.booking.findUnique({
+    where: { bookingId },
+    select: { bookingId: true },
+  });
+  if (!existing) throw new ApiError(404, "Booking not found");
+
+  const updated = await prisma.booking.update({
+    where: { bookingId },
+    data: { reminderTemplateId: templateId },
+    include: upcomingInclude(kinds.allIds),
+  });
+  return toUpcomingDTO(updated, kinds);
 }
 
 // Lists past bookings that were never completed (still Scheduled / Confirmed,
@@ -619,19 +822,17 @@ export async function listMissedBookings(): Promise<MissedBookingDTO[]> {
   }));
 }
 
-// Creates (if needed) and sends a reminder for one booking. Idempotent for
-// already-handled bookings: if a non-failed reminder exists we return it instead
-// of creating a duplicate. Requires an active reminder template.
+// Creates (if needed) and sends the reminder for one booking, from the template
+// resolved for it. Idempotent for already-handled bookings: if a non-failed
+// reminder of any kind exists we return it instead of creating a duplicate, so
+// switching the attached template after the send does not let a second message
+// out. Pass the kinds when sending in bulk so they are read once, not per row.
 export async function sendBookingReminder(
   bookingId: number,
+  kinds?: ReminderKinds,
+  bodyOverride?: string,
 ): Promise<NotificationDTO> {
-  const template = await getReminderTemplate();
-  if (!template) {
-    throw new ApiError(
-      400,
-      `No active reminder template. Create a template with trigger event "${BOOKING_REMINDER_TRIGGER}".`,
-    );
-  }
+  const resolved = kinds ?? (await loadReminderKinds());
 
   const booking = await prisma.booking.findUnique({
     where: { bookingId },
@@ -655,7 +856,7 @@ export async function sendBookingReminder(
   const existing = await prisma.notification.findFirst({
     where: {
       bookingId,
-      templateId: template.templateId,
+      templateId: { in: resolved.allIds },
       status: { not: "Failed" },
     },
     orderBy: { createdAt: "desc" },
@@ -663,8 +864,18 @@ export async function sendBookingReminder(
   });
   if (existing) return toNotificationDTO(existing);
 
+  const template = resolveReminderTemplate(resolved, booking);
+  if (!template) {
+    throw new ApiError(
+      400,
+      "No active booking reminder template. Create one on the Templates tab.",
+    );
+  }
+
   const channel = (template.channel ?? "WhatsApp") as NotificationChannel;
-  const body = renderBody(template.body, {
+  // An edited text still goes through the placeholders, so a name typed as
+  // {{patient_name}} in the preview box comes out as the pet's name.
+  const body = renderBody(bodyOverride ?? template.body, {
     clientFirstName: booking.client.firstName,
     clientLastName: booking.client.lastName,
     patientName: booking.patient.name,
@@ -689,43 +900,92 @@ export async function sendBookingReminder(
   return dispatchNotification(created.notificationId);
 }
 
-// Sends reminders for every eligible booking in the window that does not yet
-// have a (non-failed) reminder. Bookings missing contact details are skipped and
-// counted rather than aborting the whole run.
-//
-// The query asks for exactly the bookings it will act on and for nothing but
-// their ids. It used to build the tab's full list, client and patient rows and
-// a notification lookup each, and then throw most of it away at the `continue`
-// below.
-export async function generateBookingReminders(): Promise<{
+export interface BulkReminderResult {
   sent: number;
   failed: number;
+  /** Missing contact details or otherwise ineligible. */
   skipped: number;
-}> {
+  /** Left alone because the booking's note asks for a set send time. */
+  held: number;
+  /** Bookings still to send after this batch, for the caller to come back for. */
+  remaining: number;
+}
+
+export interface BulkReminderOptions {
+  /** Rows of the still-to-send list to step over: see the note below. */
+  skip?: number;
+  /** How many rows this call takes on. */
+  limit?: number;
+}
+
+// Sends reminders for eligible bookings in the window that do not yet have a
+// (non-failed) reminder, each from its own resolved template. Bookings missing
+// contact details are skipped and counted rather than aborting the run;
+// bookings whose note names a send time are held for the row's Send button,
+// because sending them now is exactly what the note asked not to do.
+//
+// One call takes on `limit` rows and reports how many are left, so the tab
+// runs a long list as a series of short requests, each inside the function's
+// time budget, and counts up on screen between them. The still-to-send list
+// is ordered by start time and only ever loses rows (the sent ones), so the
+// rows a batch could not send stay at its front: the caller steps over them
+// with `skip` = everything so far that was failed, skipped or held. A row
+// that slips through twice is caught by the idempotency check in
+// sendBookingReminder and costs nothing.
+//
+// Within a batch the provider round trip is the whole cost, so a few run at
+// once: three, enough to turn a thirty-row morning from a minute into twenty
+// seconds without leaning on the provider.
+export async function generateBookingReminders(
+  options: BulkReminderOptions = {},
+): Promise<BulkReminderResult> {
   const { from, to } = reminderWindow();
-  const template = await getReminderTemplate();
-  const due = await prisma.booking.findMany({
-    where: {
-      ...upcomingWhere(from, to),
-      ...pendingReminderWhere(template?.templateId),
-    },
-    orderBy: { startsAt: "asc" },
-    select: { bookingId: true },
+  const kinds = await loadReminderKinds();
+  const where = {
+    ...upcomingWhere(from, to),
+    ...pendingReminderWhere(kinds.allIds),
+  };
+  const skip = options.skip ?? 0;
+  const limit = options.limit ?? BULK_REMINDER_BATCH;
+
+  const [pendingTotal, due] = await Promise.all([
+    prisma.booking.count({ where }),
+    prisma.booking.findMany({
+      where,
+      orderBy: [{ startsAt: "asc" }, { bookingId: "asc" }],
+      skip,
+      take: limit,
+      select: { bookingId: true, notes: true },
+    }),
+  ]);
+
+  const result: BulkReminderResult = {
+    sent: 0,
+    failed: 0,
+    skipped: 0,
+    held: 0,
+    remaining: Math.max(pendingTotal - skip - due.length, 0),
+  };
+  const toSend = due.filter((b) => {
+    if (hasSendAtNote(b.notes)) {
+      result.held += 1;
+      return false;
+    }
+    return true;
   });
 
-  let sent = 0;
-  let failed = 0;
-  let skipped = 0;
-
-  for (const b of due) {
+  await mapWithConcurrency(toSend, BULK_REMINDER_CONCURRENCY, async (b) => {
     try {
-      const result = await sendBookingReminder(b.bookingId);
-      if (result.status === "Sent" || result.status === "Delivered") sent += 1;
-      else failed += 1;
+      const sent = await sendBookingReminder(b.bookingId, kinds);
+      if (sent.status === "Sent" || sent.status === "Delivered") {
+        result.sent += 1;
+      } else {
+        result.failed += 1;
+      }
     } catch {
       // Missing contact / ineligible: skip and keep going.
-      skipped += 1;
+      result.skipped += 1;
     }
-  }
-  return { sent, failed, skipped };
+  });
+  return result;
 }

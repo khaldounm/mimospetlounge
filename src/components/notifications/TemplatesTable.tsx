@@ -22,15 +22,28 @@ import AddIcon from "@mui/icons-material/Add";
 import EditIcon from "@mui/icons-material/Edit";
 import BlockIcon from "@mui/icons-material/Block";
 import { apiRequest } from "@/utils/api-client";
-import type { NotificationTemplateDTO } from "@/types/entities";
+import {
+  BOOKING_REMINDER_TRIGGER,
+  templateTriggerLabel,
+} from "@/constants/notification";
+import type {
+  BookingTypeOption,
+  NotificationTemplateDTO,
+} from "@/types/entities";
 import TemplateFormDialog from "./TemplateFormDialog";
+import ReminderDefaultsCard from "./ReminderDefaultsCard";
 
 interface Props {
   initialTemplates: NotificationTemplateDTO[];
+  bookingTypes: BookingTypeOption[];
   canWrite: boolean;
 }
 
-export default function TemplatesTable({ initialTemplates, canWrite }: Props) {
+export default function TemplatesTable({
+  initialTemplates,
+  bookingTypes,
+  canWrite,
+}: Props) {
   const [templates, setTemplates] = useState(initialTemplates);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<NotificationTemplateDTO | null>(null);
@@ -60,8 +73,20 @@ export default function TemplatesTable({ initialTemplates, canWrite }: Props) {
     }
   }
 
+  // The reminder kinds, straight from the list on screen: a template saved a
+  // moment ago is pickable as a default without a reload.
+  const reminderOptions = templates
+    .filter((t) => t.isActive && t.triggerEvent === BOOKING_REMINDER_TRIGGER)
+    .map((t) => ({ templateId: t.templateId, name: t.name }));
+
   return (
     <Box>
+      <ReminderDefaultsCard
+        bookingTypes={bookingTypes}
+        reminderOptions={reminderOptions}
+        canWrite={canWrite}
+      />
+
       <Stack direction="row" sx={{ justifyContent: "flex-end", mb: 2 }}>
         {canWrite && (
           <Button
@@ -108,7 +133,7 @@ export default function TemplatesTable({ initialTemplates, canWrite }: Props) {
                 <TableRow key={t.templateId} hover>
                   <TableCell>{t.name}</TableCell>
                   <TableCell>{t.channel ?? "-"}</TableCell>
-                  <TableCell>{t.triggerEvent ?? "-"}</TableCell>
+                  <TableCell>{templateTriggerLabel(t.triggerEvent)}</TableCell>
                   <TableCell>
                     <Chip
                       size="small"

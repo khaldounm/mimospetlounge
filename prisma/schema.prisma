@@ -239,34 +239,44 @@ model Reminder {
 // BOOKINGS
 // ============================================================
 model BookingType {
-  typeId          Int    @id @default(autoincrement()) @map("type_id")
-  name            String @unique @db.VarChar(100)
-  durationMinutes Int    @default(30) @map("duration_minutes")
+  typeId            Int    @id @default(autoincrement()) @map("type_id")
+  name              String @unique @db.VarChar(100)
+  durationMinutes   Int    @default(30) @map("duration_minutes")
+  // The reminder template a new booking of this type starts with. Lives on the
+  // type rather than on the template so a type has exactly one default by
+  // construction, while one template can be the default for several types.
+  defaultTemplateId Int?   @map("default_template_id")
 
-  bookings Booking[]
+  bookings        Booking[]
+  defaultTemplate NotificationTemplate? @relation(fields: [defaultTemplateId], references: [templateId], onDelete: SetNull)
 
   @@map("booking_types")
 }
 
 model Booking {
-  bookingId Int      @id @default(autoincrement()) @map("booking_id")
-  patientId Int      @map("patient_id")
-  clientId  Int      @map("client_id")
-  staffId   Int?     @map("staff_id")
-  typeId    Int?     @map("type_id")
-  startsAt  DateTime @map("starts_at") @db.Timestamptz(6)
-  endsAt    DateTime @map("ends_at") @db.Timestamptz(6)
-  status    String   @default("Scheduled") @db.VarChar(20)
-  notes     String?  @db.Text
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  bookingId          Int      @id @default(autoincrement()) @map("booking_id")
+  patientId          Int      @map("patient_id")
+  clientId           Int      @map("client_id")
+  staffId            Int?     @map("staff_id")
+  typeId             Int?     @map("type_id")
+  startsAt           DateTime @map("starts_at") @db.Timestamptz(6)
+  endsAt             DateTime @map("ends_at") @db.Timestamptz(6)
+  status             String   @default("Scheduled") @db.VarChar(20)
+  notes              String?  @db.Text
+  // The reminder template attached when the booking was taken (defaulted from
+  // the type, changeable on the form and on the Upcoming tab). Null on bookings
+  // that predate the column; the send path falls back to the type's default.
+  reminderTemplateId Int?     @map("reminder_template_id")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
 
-  patient       Patient        @relation(fields: [patientId], references: [patientId], onDelete: Restrict)
-  client        Client         @relation(fields: [clientId], references: [clientId], onDelete: Restrict)
-  staff         User?          @relation(fields: [staffId], references: [userId], onDelete: SetNull)
-  bookingType   BookingType?   @relation(fields: [typeId], references: [typeId], onDelete: SetNull)
-  invoices      Invoice[]
-  notifications Notification[]
+  patient          Patient               @relation(fields: [patientId], references: [patientId], onDelete: Restrict)
+  client           Client                @relation(fields: [clientId], references: [clientId], onDelete: Restrict)
+  staff            User?                 @relation(fields: [staffId], references: [userId], onDelete: SetNull)
+  bookingType      BookingType?          @relation(fields: [typeId], references: [typeId], onDelete: SetNull)
+  reminderTemplate NotificationTemplate? @relation(fields: [reminderTemplateId], references: [templateId], onDelete: SetNull)
+  invoices         Invoice[]
+  notifications    Notification[]
 
   @@index([staffId, startsAt], map: "idx_bookings_staff_time")
   @@index([startsAt], map: "idx_bookings_starts")
@@ -1114,7 +1124,9 @@ model NotificationTemplate {
   body         String  @db.Text
   isActive     Boolean @default(true) @map("is_active")
 
-  notifications Notification[]
+  notifications   Notification[]
+  bookings        Booking[]
+  defaultForTypes BookingType[]
 
   @@map("notification_templates")
 }

@@ -8,6 +8,13 @@ const optionalId = z.preprocess(
   z.coerce.number().int().positive().optional(),
 );
 
+// Tri-state id for a link that can be cleared: absent -> undefined (leave it),
+// "" / null -> null (clear it), else a positive int.
+const nullableId = z.preprocess(
+  (v) => (v === "" || v === null ? null : v),
+  z.coerce.number().int().positive().nullable().optional(),
+);
+
 const optionalStatus = z.preprocess(
   (v) => (v === "" || v === null ? undefined : v),
   z.enum(BOOKING_STATUSES).optional(),
@@ -25,6 +32,9 @@ export const bookingCreateSchema = z.object({
   ),
   status: optionalStatus,
   notes: optionalString(5000),
+  // The reminder template to attach. Omitted or null on create means the
+  // type's default; null on update means back to the default.
+  reminderTemplateId: nullableId,
 });
 
 // Patient is fixed once booked; everything else can be edited.

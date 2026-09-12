@@ -16,7 +16,10 @@ import {
 } from "@mui/material";
 import { apiRequest } from "@/utils/api-client";
 import { NOTIFICATION_CHANNELS } from "@/types/enums";
-import { NOTIFICATION_PLACEHOLDERS } from "@/constants/notification";
+import {
+  NOTIFICATION_PLACEHOLDERS,
+  TEMPLATE_TRIGGERS,
+} from "@/constants/notification";
 import type { NotificationTemplateDTO } from "@/types/entities";
 
 interface Props {
@@ -115,12 +118,32 @@ function TemplateForm({ template, onClose, onSaved }: FormProps) {
               ))}
             </TextField>
             <TextField
-              label="Trigger event (optional)"
+              select
+              label="Used for"
               value={triggerEvent}
               onChange={(e) => setTriggerEvent(e.target.value)}
               fullWidth
-              helperText="Label only, e.g. booking_reminder"
-            />
+              helperText="Booking reminders can be attached to bookings"
+              // "" is a real choice here (picked by hand), so it is shown by
+              // name rather than as an empty box.
+              slotProps={{
+                inputLabel: { shrink: true },
+                select: { displayEmpty: true },
+              }}
+            >
+              {TEMPLATE_TRIGGERS.map((t) => (
+                <MenuItem key={t.value} value={t.value}>
+                  {t.label}
+                </MenuItem>
+              ))}
+              {/* A value typed before this was a select stays selectable as
+                  itself, so opening an old template does not silently change
+                  what it was for. */}
+              {triggerEvent &&
+                !TEMPLATE_TRIGGERS.some((t) => t.value === triggerEvent) && (
+                  <MenuItem value={triggerEvent}>{triggerEvent}</MenuItem>
+                )}
+            </TextField>
           </Stack>
           <TextField
             label="Message body"

@@ -3,19 +3,14 @@ import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ApiError, handle, parseBody, requirePermission } from "@/lib/api";
 import {
+  bookingInclude,
   isDoubleBookingError,
   resolveEndsAt,
   toBookingDTO,
 } from "@/lib/bookings";
+import { assertReminderTemplate } from "@/lib/notifications";
 import { writeAudit } from "@/lib/audit";
 import { bookingUpdateSchema } from "@/schemas/booking";
-
-const bookingInclude = {
-  patient: { select: { patientId: true, name: true } },
-  client: { select: { clientId: true, firstName: true, lastName: true } },
-  staff: { select: { userId: true, firstName: true, lastName: true } },
-  bookingType: { select: { typeId: true, name: true } },
-} as const;
 
 async function getBookingId(params: Promise<{ bookingId: string }>) {
   const { bookingId } = await params;
@@ -59,6 +54,13 @@ export async function PATCH(
     if (data.typeId !== undefined) updateData.typeId = data.typeId;
     if (data.status !== undefined) updateData.status = data.status;
     if (data.notes !== undefined) updateData.notes = data.notes;
+    // null puts the booking back on its type's default at send time.
+    if (data.reminderTemplateId !== undefined) {
+      if (data.reminderTemplateId !== null) {
+        await assertReminderTemplate(data.reminderTemplateId);
+      }
+      updateData.reminderTemplateId = data.reminderTemplateId;
+    }
 
     // Recompute the end time whenever any timing input changes.
     const timingChanged =

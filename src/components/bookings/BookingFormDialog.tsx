@@ -28,6 +28,7 @@ import {
 import type {
   BookingDTO,
   BookingTypeOption,
+  ReminderTemplateOption,
   StaffOption,
 } from "@/types/entities";
 
@@ -50,6 +51,9 @@ interface Props {
   booking?: BookingDTO | null;
   staffOptions: StaffOption[];
   typeOptions: BookingTypeOption[];
+  // The reminder kinds a booking can carry. Empty until the clinic has a
+  // template with the booking-reminder trigger, and the field stays hidden.
+  reminderOptions: ReminderTemplateOption[];
   onClose: () => void;
   onSaved: () => void;
 }
@@ -84,6 +88,7 @@ function BookingForm({
   booking,
   staffOptions,
   typeOptions,
+  reminderOptions,
   onClose,
   onSaved,
 }: FormProps) {
@@ -99,6 +104,13 @@ function BookingForm({
   const [typeId, setTypeId] = useState(
     booking?.typeId ? String(booking.typeId) : "",
   );
+  // The reminder the booking carries. Starts on what is attached (editing) or
+  // follows the type (new) until someone picks one by hand: from then on it is
+  // theirs, and a change of type leaves it alone.
+  const [reminderTemplateId, setReminderTemplateId] = useState(
+    booking?.reminderTemplateId ? String(booking.reminderTemplateId) : "",
+  );
+  const [reminderPicked, setReminderPicked] = useState(false);
   const [slotDate, setSlotDate] = useState(
     booking?.startsAt ? booking.startsAt.slice(0, 10) : "",
   );
@@ -118,6 +130,33 @@ function BookingForm({
 
   const selectedType = typeOptions.find((t) => String(t.typeId) === typeId);
   const slotMinutes = selectedType?.durationMinutes ?? DEFAULT_SLOT_MINUTES;
+
+  // The type's default as a select value, "" when it has none or the default
+  // was deactivated since (it would not resolve, so it is not offered).
+  function defaultReminderFor(id: string): string {
+    const type = typeOptions.find((t) => String(t.typeId) === id);
+    const d = type?.defaultTemplateId;
+    return d != null && reminderOptions.some((o) => o.templateId === d)
+      ? String(d)
+      : "";
+  }
+  const typeDefaultName = reminderOptions.find(
+    (o) => String(o.templateId) === defaultReminderFor(typeId),
+  )?.name;
+
+  function changeType(next: string) {
+    // Re-default only while the reminder is still the old type's default (or
+    // unset): an explicit pick, or an attached template someone chose earlier,
+    // survives a change of type.
+    if (
+      !reminderPicked &&
+      (reminderTemplateId === "" ||
+        reminderTemplateId === defaultReminderFor(typeId))
+    ) {
+      setReminderTemplateId(defaultReminderFor(next));
+    }
+    setTypeId(next);
+  }
 
   // Load the chosen staff member's bookings for the chosen day so we can mark
   // overlapping slots as taken. Slots are per-staff because the double-booking
@@ -209,6 +248,9 @@ function BookingForm({
       const body: Record<string, unknown> = {
         staffId: staffId || "",
         typeId: typeId || "",
+        // "" reads as null on the server: the type's default on create, back
+        // to following the type on edit.
+        reminderTemplateId: reminderTemplateId || "",
         startsAt: toIso(startsAt),
         endsAt: toIso(endsAt) ?? "",
         notes,
@@ -271,7 +313,7 @@ function BookingForm({
               select
               label="Type"
               value={typeId}
-              onChange={(e) => setTypeId(e.target.value)}
+              onChange={(e) => changeType(e.target.value)}
               fullWidth
               helperText={
                 selectedType
@@ -287,6 +329,40 @@ function BookingForm({
               ))}
             </TextField>
           </Stack>
+
+          {reminderOptions.length > 0 && (
+            <TextField
+              select
+              label="Reminder"
+              value={reminderTemplateId}
+              onChange={(e) => {
+                setReminderPicked(true);
+                setReminderTemplateId(e.target.value);
+              }}
+              fullWidth
+              helperText="The message sent from Upcoming Bookings before the visit"
+              // "" is a real choice (follow the type), so it is shown by name
+              // rather than as an empty box.
+              slotProps={{
+                inputLabel: { shrink: true },
+                select: { displayEmpty: true },
+              }}
+            >
+              {/* "" is the unattached state: whatever the type says at send
+                  time, named here so the choice reads as a message and not as
+                  an absence. */}
+              <MenuItem value="">
+                {typeDefaultName
+                  ? `Type default (${typeDefaultName})`
+                  : "Generic booking reminder"}
+              </MenuItem>
+              {reminderOptions.map((o) => (
+                <MenuItem key={o.templateId} value={String(o.templateId)}>
+                  {o.name}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
 
           <Stack spacing={1}>
             <TextField
