@@ -87,16 +87,18 @@ SELECT current_database(), inet_server_addr();
 
 ## Nightly backups
 
-`.github/workflows/db-backup.yml` is a matrix with one entry per clinic. Each
-entry names the secrets holding that clinic's `DIRECT` connection string,
-Drive folder id and passphrase; the Drive OAuth client and token are shared.
-A clinic whose secrets are not set yet is skipped with a notice, not failed.
+`.github/workflows/db-backup.yml` is a matrix with one entry per clinic: its
+R2 bucket, and the names of the secrets holding its `DIRECT` connection
+string, passphrase and R2 API token. Backups go to Cloudflare R2, a different
+provider from the database on purpose. A clinic whose secrets are not set yet
+is skipped with a notice, not failed. Setup is in `docs/backup-setup.md`.
 
 ## Adding a clinic
 
 1. Add `src/constants/clinics/<id>.ts` and register it in
    `src/constants/clinic.ts` and the `ClinicId` type.
 2. Put its logos under `public/clinics/<id>/`.
-3. Add a matrix entry to the backup workflow and create its three secrets.
+3. Create its R2 bucket, add a matrix entry to the backup workflow and set
+   its secrets (`docs/backup-setup.md`).
 4. Create the Vercel project from this repository with the environment above.
 5. Write the `clinic.id` row into its database.

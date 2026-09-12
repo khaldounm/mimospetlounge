@@ -1,25 +1,31 @@
-# Nightly backup of every clinic's Supabase database to Google Drive.
+# Nightly backup of every clinic's Supabase database to Cloudflare R2.
 #
 # Supabase's free tier keeps no backups at all, so this is the only copy of the
 # clinics' data outside the live databases. It runs on GitHub's schedule rather
-# than a laptop, so it does not depend on anyone's machine being awake.
+# than a laptop, so it does not depend on anyone's machine being awake, and it
+# lands in a different provider from the database on purpose: a backup that
+# lives inside the project it protects dies with it.
 #
 # One codebase serves several clinics, each with its own database, so the job
-# is a matrix: one entry per clinic below, each naming the secrets that hold
-# ITS connection string, Drive folder and passphrase. A clinic whose secrets
-# are not set yet is skipped with a notice rather than failing the run, so a
-# new entry can be committed before its secrets exist.
+# is a matrix: one entry per clinic below, each naming its bucket and the
+# secrets that hold ITS connection string, passphrase and R2 credentials. A
+# clinic whose secrets are not set yet is skipped with a notice rather than
+# failing the run, so a new entry can be committed before its secrets exist.
 #
-# Shared repository secrets (Settings > Secrets and variables > Actions):
-#   GDRIVE_CLIENT_ID     from `rclone config` on your machine
-#   GDRIVE_CLIENT_SECRET  "
-#   GDRIVE_TOKEN         the {"access_token":...} JSON rclone stores
+# Shared repository secret (Settings > Secrets and variables > Actions):
+#   R2_ACCOUNT_ID        Cloudflare account id; the S3 endpoint is derived
+#                        from it
 #
 # Per clinic (the names are given in the matrix, these are Mimo's):
 #   SUPABASE_DB_URL      the DIRECT connection string, port 5432 (NOT 6543:
 #                        the transaction pooler cannot serve pg_dump)
 #   BACKUP_PASSPHRASE    long random string; encrypts the dump before upload
-#   GDRIVE_FOLDER_ID     id of the Drive folder to write into (from its URL)
+#   R2_ACCESS_KEY_ID     an R2 API token with Object Read & Write on that
+#   R2_SECRET_ACCESS_KEY clinic's bucket. Both clinics may name the same pair
+#                        (one token scoped to both buckets) or each its own.
+#
+# Files are named <prefix>-<stamp>.dump.gpg and pruned after 30 days per
+# bucket, so the bucket holds a rolling month.
 
 name: Database backup
 
@@ -44,28 +50,48 @@ jobs:
           # pattern below only ever touches that clinic's files.
           - id: mimo
             prefix: mimos
+            bucket: mimos-backups
             db_url_secret: SUPABASE_DB_URL
             passphrase_secret: BACKUP_PASSPHRASE
-            folder_secret: GDRIVE_FOLDER_ID
+            key_id_secret: R2_ACCESS_KEY_ID
+            secret_key_secret: R2_SECRET_ACCESS_KEY
           - id: nadine
             prefix: nadine
+            bucket: nadine-backups
             db_url_secret: NADINE_SUPABASE_DB_URL
             passphrase_secret: NADINE_BACKUP_PASSPHRASE
-            folder_secret: NADINE_GDRIVE_FOLDER_ID
+            key_id_secret: R2_ACCESS_KEY_ID
+            secret_key_secret: R2_SECRET_ACCESS_KEY
     concurrency:
       group: db-backup-${{ matrix.clinic.id }}
       cancel-in-progress: false
     env:
       PREFIX: ${{ matrix.clinic.prefix }}
+      BUCKET: ${{ matrix.clinic.bucket }}
+      # rclone reads a remote's whole config from the environment, so nothing
+      # is written to disk and no credential appears in a file the runner
+      # leaves behind. R2 speaks S3; the region is always "auto".
+      RCLONE_CONFIG_R2_TYPE: s3
+      RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+      RCLONE_CONFIG_R2_REGION: auto
+      # An object-scoped token may not HEAD or create buckets; without this
+      # rclone mistakes the refusal for a missing bucket and tries to create
+      # it, which the token rightly cannot do.
+      RCLONE_CONFIG_R2_NO_CHECK_BUCKET: "true"
+      RCLONE_CONFIG_R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+      RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets[matrix.clinic.key_id_secret] }}
+      RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets[matrix.clinic.secret_key_secret] }}
     steps:
       - name: Check this clinic is configured
         id: configured
         env:
           DB_URL: ${{ secrets[matrix.clinic.db_url_secret] }}
           PASSPHRASE: ${{ secrets[matrix.clinic.passphrase_secret] }}
-          FOLDER: ${{ secrets[matrix.clinic.folder_secret] }}
+          ACCOUNT: ${{ secrets.R2_ACCOUNT_ID }}
+          KEY_ID: ${{ secrets[matrix.clinic.key_id_secret] }}
+          SECRET_KEY: ${{ secrets[matrix.clinic.secret_key_secret] }}
         run: |
-          if [ -z "$DB_URL" ] || [ -z "$PASSPHRASE" ] || [ -z "$FOLDER" ]; then
+          if [ -z "$DB_URL" ] || [ -z "$PASSPHRASE" ] || [ -z "$ACCOUNT" ] || [ -z "$KEY_ID" ] || [ -z "$SECRET_KEY" ]; then
             echo "::notice::${{ matrix.clinic.id }}: secrets not set, skipping this clinic."
             echo "ok=false" >> "$GITHUB_OUTPUT"
           else
@@ -137,41 +163,24 @@ jobs:
           rm -f "$PREFIX-$STAMP.dump"
           ls -lh "$PREFIX-$STAMP.dump.gpg"
 
-      - name: Upload to Google Drive
+      - name: Upload to R2
         if: steps.configured.outputs.ok == 'true'
         # rclone is installed from its official script rather than via a
-        # third-party action, because this step is handed the Drive token and
-        # there is no reason to widen who can see it.
-        #
-        # Config comes from environment variables, so nothing is written to disk
-        # and the token never appears in a file the runner leaves behind.
-        env:
-          RCLONE_CONFIG_GDRIVE_TYPE: drive
-          RCLONE_CONFIG_GDRIVE_SCOPE: drive
-          RCLONE_CONFIG_GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
-          RCLONE_CONFIG_GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
-          RCLONE_CONFIG_GDRIVE_TOKEN: ${{ secrets.GDRIVE_TOKEN }}
-          RCLONE_CONFIG_GDRIVE_ROOT_FOLDER_ID: ${{ secrets[matrix.clinic.folder_secret] }}
+        # third-party action, because this step is handed the bucket
+        # credentials and there is no reason to widen who can see them.
         run: |
           set -euo pipefail
           curl -fsSL https://rclone.org/install.sh | sudo bash
-          rclone copy "$PREFIX-$STAMP.dump.gpg" gdrive: --no-traverse
-          echo "uploaded $PREFIX-$STAMP.dump.gpg"
+          rclone copy "$PREFIX-$STAMP.dump.gpg" "r2:$BUCKET" --no-traverse
+          echo "uploaded $PREFIX-$STAMP.dump.gpg to $BUCKET"
           # Read it back so a silent upload failure cannot pass as success.
-          rclone lsl gdrive: --include "$PREFIX-$STAMP.dump.gpg" | tee /tmp/verify
+          rclone lsl "r2:$BUCKET" --include "$PREFIX-$STAMP.dump.gpg" | tee /tmp/verify
           test -s /tmp/verify
 
       - name: Prune backups older than 30 days
         if: steps.configured.outputs.ok == 'true'
-        env:
-          RCLONE_CONFIG_GDRIVE_TYPE: drive
-          RCLONE_CONFIG_GDRIVE_SCOPE: drive
-          RCLONE_CONFIG_GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
-          RCLONE_CONFIG_GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
-          RCLONE_CONFIG_GDRIVE_TOKEN: ${{ secrets.GDRIVE_TOKEN }}
-          RCLONE_CONFIG_GDRIVE_ROOT_FOLDER_ID: ${{ secrets[matrix.clinic.folder_secret] }}
         run: |
           set -euo pipefail
-          rclone delete gdrive: --min-age 30d --include "$PREFIX-*.dump.gpg"
-          echo "backups now held:"
-          rclone lsl gdrive: --include "$PREFIX-*.dump.gpg" | wc -l
+          rclone delete "r2:$BUCKET" --min-age 30d --include "$PREFIX-*.dump.gpg"
+          echo "backups now held in $BUCKET:"
+          rclone lsl "r2:$BUCKET" --include "$PREFIX-*.dump.gpg" | wc -l
