@@ -23,6 +23,11 @@ function num(value: string | number): string {
 // The roll stylesheet and page shell, shared by every kind of receipt so a
 // second slip cannot drift away from the first. The body is whatever goes
 // inside the receipt div.
+// The slip is laid out at the counter's roll width when there is one, and at
+// the standard receipt width otherwise, so the two numbers can never disagree
+// for a clinic that has a roll.
+const SLIP_WIDTH_MM = CLINIC.receiptRollWidthMm ?? RECEIPT_WIDTH_MM;
+
 const RECEIPT_STYLE = `
   /* Industry-standard receipt: the page IS the receipt, an 80mm roll cut to the
      length of the content, so Save-as-PDF yields a clean narrow slip rather
@@ -33,7 +38,7 @@ const RECEIPT_STYLE = `
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body {
-    width: ${RECEIPT_WIDTH_MM}mm;
+    width: ${SLIP_WIDTH_MM}mm;
     /* A thermal head is 203 DPI and one bit deep: it cannot lay down a thin
        stroke, only decide whether each dot burns. Courier's hairlines fell
        below that threshold and came out grey and broken. A sturdy sans at a
@@ -227,10 +232,18 @@ function receiptHtml(invoice: InvoiceDTO): string {
   );
 }
 
+// Whether the PAGE is cut to the slip depends on the clinic: with a roll
+// printer at the counter the page is sized to the content (see
+// print-document.ts), without one the slip prints on whatever the default
+// printer feeds, which is what a page printer expects.
+function rollWidthMm(): number | undefined {
+  return CLINIC.receiptRollWidthMm ?? undefined;
+}
+
 // Renders the invoice as a thermal receipt and sends it to the printer. On a
 // counter browser launched with kiosk printing it goes straight to the roll.
 export function printInvoiceReceipt(invoice: InvoiceDTO): void {
-  printHtmlDocument(receiptHtml(invoice), { rollWidthMm: RECEIPT_WIDTH_MM });
+  printHtmlDocument(receiptHtml(invoice), { rollWidthMm: rollWidthMm() });
 }
 
 // What the counter hands a customer who came in only to pay off their account.
@@ -319,6 +332,6 @@ function accountReceiptHtml(receipt: AccountReceipt): string {
 // the same roll path the invoice receipt uses.
 export function printAccountReceipt(receipt: AccountReceipt): void {
   printHtmlDocument(accountReceiptHtml(receipt), {
-    rollWidthMm: RECEIPT_WIDTH_MM,
+    rollWidthMm: rollWidthMm(),
   });
 }

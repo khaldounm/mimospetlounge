@@ -27,6 +27,7 @@ import { resolve } from "node:path";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Prisma, PrismaClient } from "../src/generated/prisma/client";
+import { assertClinicDatabase } from "../src/lib/clinic-guard";
 
 type SeedService = {
   legacyId: number;
@@ -99,6 +100,8 @@ async function main() {
   const prisma = new PrismaClient({
     adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
   });
+  // The catalogue below is Mimo's: refuses any other clinic's database.
+  await assertClinicDatabase(prisma, { expected: "mimo" });
   const checkOnly = process.argv.includes("--check");
   const noPrune = process.argv.includes("--no-prune");
   const services = load<SeedService>("services.json");

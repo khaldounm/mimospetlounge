@@ -25,6 +25,7 @@ import {
   LEGACY_OPENING_BALANCE_SOURCE_CLIENT as OPENING_BALANCE_SOURCE,
 } from "@/constants/legacy-import";
 import { atClinicTime } from "@/lib/legacy-import/transform";
+import { assertClinicDatabase } from "@/lib/clinic-guard";
 
 type SeedClient = {
   legacyId: number;
@@ -90,6 +91,8 @@ function load<T>(file: string): T[] {
 }
 
 async function main() {
+  // Built from Mimo's export: refuses any other clinic's database.
+  await assertClinicDatabase(prisma, { expected: "mimo" });
   const checkOnly = process.argv.includes("--check");
   const clients = load<SeedClient>("clients.json");
   const patients = load<SeedPatient>("patients.json");

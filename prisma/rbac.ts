@@ -88,25 +88,46 @@ export const ROLE_DESCRIPTIONS: Record<string, string> = {
   Groomer: "Grooming bookings and grooming records",
 };
 
-// Idempotently upsert the permission catalogue, the roles, and their grants.
-// Safe to run repeatedly. Shared by the seed and the add-user script.
+// Reconciles the permission catalogue, the roles, and their default grants.
+// Safe to run repeatedly. Shared by the seed, seed:rbac and the add-user script.
+//
+// Grants are ADDITIVE ONLY FOR WHAT IS NEW. A role that already exists keeps
+// the matrix its Admin has shaped in Settings: only a permission this run just
+// created gets its default grant. Before this rule, every run re-granted the
+// whole catalogue and quietly undid removals, and add-user.ts (which calls
+// this to work on a fresh database) was widening access every time someone
+// joined. A role created here gets its full default set, as a fresh database
+// always did.
 export async function seedRbac(prisma: PrismaClient): Promise<void> {
+  const createdPermissions = new Set<string>();
   for (const [name, description] of Object.entries(PERMISSIONS)) {
-    await prisma.permission.upsert({
-      where: { name },
-      update: { description },
-      create: { name, description },
-    });
+    const existing = await prisma.permission.findUnique({ where: { name } });
+    if (existing) {
+      await prisma.permission.update({
+        where: { name },
+        data: { description },
+      });
+    } else {
+      await prisma.permission.create({ data: { name, description } });
+      createdPermissions.add(name);
+    }
   }
 
   for (const [roleName, grants] of Object.entries(ROLE_GRANTS)) {
-    const role = await prisma.role.upsert({
+    const existingRole = await prisma.role.findUnique({
       where: { name: roleName },
-      update: { description: ROLE_DESCRIPTIONS[roleName] },
-      create: { name: roleName, description: ROLE_DESCRIPTIONS[roleName] },
     });
+    const role = existingRole
+      ? await prisma.role.update({
+          where: { name: roleName },
+          data: { description: ROLE_DESCRIPTIONS[roleName] },
+        })
+      : await prisma.role.create({
+          data: { name: roleName, description: ROLE_DESCRIPTIONS[roleName] },
+        });
 
     for (const permName of grants) {
+      if (existingRole && !createdPermissions.has(permName)) continue;
       const perm = await prisma.permission.findUniqueOrThrow({
         where: { name: permName },
       });

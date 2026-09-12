@@ -18,6 +18,7 @@ import { join } from "node:path";
 
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import { assertClinicDatabase } from "@/lib/clinic-guard";
 
 type SeedItem = {
   legacyId: number;
@@ -54,6 +55,8 @@ function load<T>(file: string): T[] {
 const dec = (v: number | null) => (v === null ? null : v.toFixed(2));
 
 async function main() {
+  // Built from Mimo's export: refuses any other clinic's database.
+  await assertClinicDatabase(prisma, { expected: "mimo" });
   const checkOnly = process.argv.includes("--check");
   const items = load<SeedItem>("inventory.json");
   const services = load<SeedService>("services.json");

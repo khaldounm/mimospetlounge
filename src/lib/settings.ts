@@ -5,6 +5,9 @@ import { DEFAULT_FX_USD_LBP } from "@/constants/clinic";
 // silently missing setting.
 export const SETTING_KEYS = {
   fxUsdLbp: "fx.usd_lbp",
+  // Which clinic this database belongs to. Read only by the scripts that can
+  // destroy data (seeds, legacy import); see @/lib/clinic-guard.
+  clinicId: "clinic.id",
 } as const;
 
 export async function getSetting(key: string): Promise<string | null> {

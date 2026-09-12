@@ -10,6 +10,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { extractAll } from "./extract";
 import { loadStaging } from "./staging";
+import { prisma } from "@/lib/prisma";
+import { assertClinicDatabase } from "@/lib/clinic-guard";
 
 function arg(flag: string): string | undefined {
   const i = process.argv.indexOf(flag);
@@ -22,6 +24,10 @@ async function main() {
 
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error("DATABASE_URL is not set");
+
+  // The .mdb is Mimo's old system: refuses any other clinic's database before
+  // a single staging table is written.
+  await assertClinicDatabase(prisma, { expected: "mimo" });
 
   // Defaults to an OS temp dir, never the repo: this data is real client PII.
   const workDir =
@@ -47,7 +53,9 @@ async function main() {
   await transform();
 }
 
-main().catch((e) => {
-  console.error(e instanceof Error ? e.message : e);
-  process.exit(1);
-});
+main()
+  .catch((e) => {
+    console.error(e instanceof Error ? e.message : e);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());

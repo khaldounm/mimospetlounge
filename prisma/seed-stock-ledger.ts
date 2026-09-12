@@ -30,6 +30,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { LEGACY_OPENING_BALANCE_DATE } from "@/constants/legacy-import";
+import { assertClinicDatabase } from "@/lib/clinic-guard";
 
 const CHECK = process.argv.includes("--check");
 const FORCE = process.argv.includes("--force");
@@ -64,6 +65,9 @@ const money = (v: unknown): string =>
   });
 
 async function main() {
+  // Built from Mimo's export: refuses any other clinic's database.
+  await assertClinicDatabase(prisma, { expected: "mimo" });
+
   // ── Preconditions ────────────────────────────────────────────────────────
   const staging = await one<{ n: bigint }>(
     `SELECT count(*)::bigint AS n FROM information_schema.tables

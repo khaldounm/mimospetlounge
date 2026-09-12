@@ -1,38 +1,46 @@
-// Seller (clinic) identity printed on invoice PDFs.
-export const CLINIC = {
-  name: "Mimo's Pet Lounge",
-  // IANA timezone for the clinic. Used to render dates/times (e.g. appointment
-  // reminders) in local time regardless of where the server runs (Vercel = UTC).
-  timezone: "Asia/Beirut",
-  // Display locale for dates and times. Pinned rather than left to the
-  // runtime default, which resolves to each machine's own OS/browser locale:
-  // the counter PC rendered 14:30 while other machines rendered 02:30 PM off
-  // the identical deploy. "en-US" matches the 12-hour clock the reminders
-  // already send (see lib/notifications.ts).
-  locale: "en-US",
-  // Logo lives in /public. The wide lockup, not the square mark: an invoice
-  // header is a wide slot, and the square one was being drawn into it at
-  // 170x52, squashing it flat. Dimensions hold the source 1628x601 ratio.
-  //
-  // PNG rather than the .webp beside it because the PDF renderer only decodes
-  // PNG and JPEG.
-  logo: { src: "/mimos-logo-wide.png", width: 170, height: 63 },
-  // One line per array entry; blank entries are skipped.
-  addressLines: [
-    "Qabershmoun",
-    "Basetine main road",
-    "Aley, Mount-Lebanon",
-    "Lebanon",
-  ],
-  phone: "Mobile: 81 949 367",
-  email: "mimospetlounge@gmail.com",
-  // Blank so it is not printed. Every consumer already skips empty entries, so
-  // this keeps the field (and its three call sites) intact rather than deleting
-  // the line and leaving the code referencing something that is gone.
-  website: "",
-  // Tax / business registration number (e.g. EIN, VAT, ABN).
-  taxId: "",
-} as const;
+// The clinic this deployment serves.
+//
+// One codebase is deployed once per clinic, each Vercel project with its own
+// database and its own NEXT_PUBLIC_CLINIC_ID. The variable is NEXT_PUBLIC_
+// because the profile is read in client components and in PDFs rendered in the
+// browser; Next inlines it at build time, so every build carries exactly one
+// identity and cannot be re-pointed at runtime.
+//
+// A missing or unknown id throws at module load, which fails the build. That is
+// deliberate: a deployment that forgot to say who it is must not quietly come
+// up wearing another clinic's name, logo and phone number.
+import type { ClinicId, ClinicProfile } from "@/types/clinic";
+import { MIMO } from "@/constants/clinics/mimo";
+import { NADINE } from "@/constants/clinics/nadine";
+
+export const CLINIC_PROFILES: Readonly<Record<ClinicId, ClinicProfile>> = {
+  mimo: MIMO,
+  nadine: NADINE,
+};
+
+function isClinicId(value: string): value is ClinicId {
+  return Object.prototype.hasOwnProperty.call(CLINIC_PROFILES, value);
+}
+
+function resolveClinic(): ClinicProfile {
+  const raw = process.env.NEXT_PUBLIC_CLINIC_ID ?? "";
+  const id = raw.trim().toLowerCase();
+  if (!isClinicId(id)) {
+    const known = Object.keys(CLINIC_PROFILES).join(", ");
+    throw new Error(
+      `NEXT_PUBLIC_CLINIC_ID must be one of: ${known}. Got "${raw}". ` +
+        "Set it in .env locally and in each Vercel project's environment.",
+    );
+  }
+  return CLINIC_PROFILES[id];
+}
+
+// Seller (clinic) identity: printed on invoice PDFs, shown in the shell, and
+// the source of the timezone and locale every date on screen is rendered in.
+export const CLINIC: ClinicProfile = resolveClinic();
+
+// Default payment terms / footer note printed at the bottom of the invoice.
+export const INVOICE_TERMS = CLINIC.invoiceTerms;
 
 // ISO 4217 currency code + symbol used on invoices. USD is the ledger
 // currency: every stored amount, balance and total is in it.
@@ -57,7 +65,3 @@ export const LBP_CASH_INCREMENT = 5_000;
 // Starting point only, seeded into the settings table by the migration that
 // added it. The live value is Admin-editable; see @/lib/settings.
 export const DEFAULT_FX_USD_LBP = 89_500;
-
-// Default payment terms / footer note printed at the bottom of the invoice.
-export const INVOICE_TERMS =
-  "Payment is due by the date shown above. Please reference the invoice number with your payment. Thank you for your business.";

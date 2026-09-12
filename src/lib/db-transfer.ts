@@ -23,6 +23,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { CLINIC } from "@/constants/clinic";
 
 // Dumps live in the repo for convenience, but they hold real client PII, so
 // the directory must be git-ignored. assertIgnored() checks that on every run
@@ -97,7 +98,7 @@ export function backup(sourceUrl: string, outDir = DEFAULT_DIR): string {
   mkdirSync(outDir, { recursive: true, mode: 0o700 });
   assertIgnored(outDir);
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const file = join(outDir, `mimos-${stamp}.dump`);
+  const file = join(outDir, `${CLINIC.backupPrefix}-${stamp}.dump`);
 
   // Custom format: compressed, and restorable with --clean so a repeat restore
   // does not need the target wiped by hand first. Only the app's own schema is

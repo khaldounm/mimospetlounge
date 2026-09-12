@@ -45,6 +45,7 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import AccountCircleIcon from "@mui/icons-material/AccountCircle";
 import SettingsIcon from "@mui/icons-material/Settings";
 import { NAV_MODULES, hasPermission } from "@/lib/permissions";
+import { CLINIC } from "@/constants/clinic";
 import { useColorMode } from "./ThemeRegistry";
 import { navTokens } from "./theme";
 
@@ -163,8 +164,8 @@ export default function DashboardShell({
               component="img"
               // Always the white variant: the nav pane is a dark fill in both
               // modes, so the ink logo would disappear against it in light mode.
-              src="/mimos-logo-wide-white.webp"
-              alt="Mimo's Pet Lounge"
+              src={CLINIC.logos.nav}
+              alt={CLINIC.name}
               sx={{
                 height: DRAWER_LOGO_HEIGHT,
                 width: "auto",
@@ -445,10 +446,8 @@ export default function DashboardShell({
           </IconButton>
           <Box
             component="img"
-            src={
-              mode === "dark" ? "/mimos-logo-white.webp" : "/mimos-logo.webp"
-            }
-            alt="Mimo's Pet Lounge"
+            src={mode === "dark" ? CLINIC.logos.onDark : CLINIC.logos.onLight}
+            alt={CLINIC.name}
             sx={{
               height: APPBAR_LOGO_HEIGHT,
               width: "auto",

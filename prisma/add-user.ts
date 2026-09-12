@@ -4,6 +4,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { seedRbac } from "./rbac";
 import { seedBookingTypes } from "./reference-data";
+import { assertClinicDatabase } from "../src/lib/clinic-guard";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
@@ -24,6 +25,7 @@ const LAST_NAME = process.env.ADMIN_LAST_NAME ?? "User";
 const ROLE_NAME = process.env.ADMIN_ROLE ?? "Admin";
 
 async function main() {
+  await assertClinicDatabase(prisma);
   // Ensure roles, permissions and booking types exist so this works on a
   // fresh, unseeded DB.
   await seedRbac(prisma);

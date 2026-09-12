@@ -1,43 +1,22 @@
 // Which product modules this deployment exposes.
 //
-// This repo serves exactly one clinic (Dr Zeina), so the constant below is the
-// source of truth. No module code is deleted and the permission catalogue in
-// prisma/rbac.ts stays complete, so a module can be switched back on later
-// without restoring code.
+// The list belongs to the clinic profile (see @/constants/clinics): one
+// codebase serves several clinics and each switches on a different set. No
+// module code is deleted and the permission catalogue in prisma/rbac.ts stays
+// complete, so a module can be switched on for a clinic later without
+// restoring code. Anything missing from a clinic's list is denied.
 //
 // The gate is applied in one place: hasPermission() in src/lib/permissions.ts.
 // requirePermission() in src/lib/api.ts delegates to hasPermission(), and both
 // the proxy.ts route gating and DashboardShell's nav filtering flow through it,
 // so clipping there covers nav, pages and every API route at once.
-
-export const ENABLED_MODULES = [
-  "patients", // clients and patients
-  "clinical",
-  "bookings",
-  "invoices", // also gates Services, which has no permission of its own
-  "payments",
-  "notifications",
-  "users",
-  "audit",
-  "inventory", // she runs a separate store application
-  "orders", // purchase orders and suppliers
-  "payables", // supplier balances, statements and payments
-  "partners",
-  "costs",
-  "analytics", // mostly store-derived, off for v1
-] as const;
-
-// Off for this deployment. Documentation only, nothing reads this array: the
-// gate is a whitelist, so anything missing from ENABLED_MODULES is denied.
-export const DISABLED_MODULES = [
-  "messages", // website contact form
-] as const;
+import { CLINIC } from "@/constants/clinic";
 
 // Optional override for demos: FEATURES="patients,invoices,analytics".
 //
-// A set value REPLACES the list above wholesale rather than adding to it, so a
-// stale or partial value can never silently widen access beyond what it names.
-// Unset, empty, or all-whitespace falls back to ENABLED_MODULES, never to
+// A set value REPLACES the clinic's list wholesale rather than adding to it,
+// so a stale or partial value can never silently widen access beyond what it
+// names. Unset, empty, or all-whitespace falls back to the profile, never to
 // all-on. Read once at module load, so changing it needs a server restart.
 function resolveEnabledModules(): ReadonlySet<string> {
   const raw = process.env.FEATURES;
@@ -48,7 +27,7 @@ function resolveEnabledModules(): ReadonlySet<string> {
       .filter(Boolean);
     if (parsed.length > 0) return new Set(parsed);
   }
-  return new Set<string>(ENABLED_MODULES);
+  return new Set<string>(CLINIC.modules.map((m) => m.toLowerCase()));
 }
 
 const enabledModules = resolveEnabledModules();

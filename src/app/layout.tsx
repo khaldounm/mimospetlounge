@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import ThemeRegistry from "@/components/ui/ThemeRegistry";
+import { CLINIC } from "@/constants/clinic";
 import { COLOR_MODE_COOKIE } from "@/constants/theme";
 
 const geistSans = Geist({
@@ -17,8 +18,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Vet Clinic",
-  description: "Vet clinic management system",
+  title: CLINIC.name,
+  description: `${CLINIC.name} management system`,
   robots: {
     index: false,
     follow: false,

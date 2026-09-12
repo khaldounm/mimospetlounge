@@ -10,6 +10,7 @@
 // is added later fails loudly here instead of silently dropping rows.
 
 import { prisma } from "@/lib/prisma";
+import { assertClinicDatabase } from "@/lib/clinic-guard";
 
 // Order matters: children before parents.
 const WIPE_ORDER = [
@@ -113,6 +114,7 @@ const PRESERVED = [
 const LEGACY_OWNED = ["services"] as const;
 
 export async function reset() {
+  await assertClinicDatabase(prisma, { expected: "mimo" });
   const before = await counts();
 
   // opening_balances carries a BEFORE UPDATE OR DELETE trigger that refuses

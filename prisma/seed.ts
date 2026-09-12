@@ -5,11 +5,14 @@ import { PrismaClient } from "../src/generated/prisma/client";
 import { seedRbac } from "./rbac";
 import { seedBookingTypes } from "./reference-data";
 import { seedServices } from "./seed-services";
+import { assertClinicDatabase } from "../src/lib/clinic-guard";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
+  // A fresh database is claimed for this clinic; a populated one must agree.
+  await assertClinicDatabase(prisma, { claim: true });
   await seedRbac(prisma);
 
   // Admin user

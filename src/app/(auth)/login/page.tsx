@@ -14,6 +14,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useColorMode } from "@/components/ui/ThemeRegistry";
+import { CLINIC } from "@/constants/clinic";
 
 const LOGIN_LOGO_HEIGHT = 72;
 
@@ -55,10 +56,8 @@ function LoginForm() {
         <Box sx={{ textAlign: "center" }}>
           <Box
             component="img"
-            src={
-              mode === "dark" ? "/mimos-logo-white.webp" : "/mimos-logo.webp"
-            }
-            alt="Mimo's Pet Lounge  "
+            src={mode === "dark" ? CLINIC.logos.onDark : CLINIC.logos.onLight}
+            alt={CLINIC.name}
             sx={{
               height: LOGIN_LOGO_HEIGHT,
               width: "auto",
