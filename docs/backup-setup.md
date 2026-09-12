@@ -64,9 +64,25 @@ dashboard under Database > Extensions, then rerun.
 
 ## Step 6: Prove a backup is actually restorable
 
-This is the step people skip, and the only one that proves anything. From
-your machine, with an rclone remote `r2` configured the same way (type `s3`,
-provider `Cloudflare`, the endpoint and keys from step 2):
+This is the step people skip, and the only one that proves anything.
+`docs/r2-backup-test.sh` runs the whole pipeline from your Mac against a
+clinic's LOCAL database with the workflow's exact steps, uploads, reads the
+file back, compares checksums, decrypts and counts tables. It reads the R2
+keys from a git-ignored `.env.r2` (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+`R2_SECRET_ACCESS_KEY`, `NADINE_BACKUP_PASSPHRASE`) and Mimo's passphrase
+from `.env`. Both clinics passed it on 2026-09-12.
+
+```bash
+sh docs/r2-backup-test.sh nadine
+```
+
+```bash
+KEEP=0 sh docs/r2-backup-test.sh mimo   # KEEP=0 removes the test file afterwards
+```
+
+To check a real nightly file by hand instead, with an rclone remote `r2`
+configured the same way (type `s3`, provider `Cloudflare`, `no_check_bucket`
+on, the endpoint and keys from step 2):
 
 ```bash
 rclone copy r2:mimos-backups ./backup-test --include "mimos-*.dump.gpg" && ls -lh ./backup-test

@@ -7,6 +7,7 @@ export const INVENTORY_CATEGORIES = [
   "Treats",
   "Toys",
   "Medication",
+  "Vaccines",
   "Supplements",
   "Grooming Supplies",
   "Consumables",
