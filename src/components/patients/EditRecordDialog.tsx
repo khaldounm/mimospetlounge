@@ -13,10 +13,12 @@ import {
 } from "@mui/material";
 import { apiRequest } from "@/utils/api-client";
 import type { ClinicalRecordDTO, ServicePickerOption } from "@/types/entities";
-import { recordTypeForCategory } from "@/constants/clinical";
-import ServiceSubcategorySelect, {
+import {
   CUSTOM_SUBCATEGORY,
-} from "@/components/ui/ServiceSubcategorySelect";
+  RECORD_DETAIL_LABELS,
+  recordTypeForCategory,
+} from "@/constants/clinical";
+import ServiceSubcategorySelect from "@/components/ui/ServiceSubcategorySelect";
 import VitalsFields from "./VitalsFields";
 import type { RecordType } from "@/types/enums";
 
@@ -28,19 +30,6 @@ interface Props {
   onClose: () => void;
   onSaved: () => void;
 }
-
-const DETAIL_LABELS: Record<string, string> = {
-  chiefComplaint: "Chief complaint",
-  assessment: "Assessment / diagnosis",
-  plan: "Treatment plan",
-  medication: "Medication",
-  lotNumber: "Lot number",
-  manufacturer: "Manufacturer",
-  coatCondition: "Coat condition",
-  procedure: "Procedure",
-  findings: "Findings",
-  result: "Result / outcome",
-};
 
 const SUBCATEGORY_LABEL: Record<RecordType, string> = {
   Consultation: "Service type",
@@ -197,7 +186,7 @@ function EditRecordForm({
           {Object.keys(details).map((key) => (
             <TextField
               key={key}
-              label={DETAIL_LABELS[key] ?? key}
+              label={RECORD_DETAIL_LABELS[key] ?? key}
               value={details[key]}
               onChange={(e) =>
                 setDetails((d) => ({ ...d, [key]: e.target.value }))

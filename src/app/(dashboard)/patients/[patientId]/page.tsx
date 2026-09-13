@@ -7,6 +7,7 @@ import { toDateOnly } from "@/utils/format";
 import type {
   ClinicalRecordDTO,
   PatientDTO,
+  PatientPickerOption,
   ServicePickerOption,
 } from "@/types/entities";
 import PatientDetail from "@/components/patients/PatientDetail";
@@ -39,6 +40,18 @@ export default async function PatientDetailPage({
             lastName: true,
             phone: true,
             phone2: true,
+            // The owner's other pets, for the add-record dialog to move
+            // between without leaving the form. Same query, no extra trip.
+            patients: {
+              where: { deletedAt: null },
+              orderBy: { name: "asc" },
+              select: {
+                patientId: true,
+                name: true,
+                species: true,
+                breed: true,
+              },
+            },
           },
         },
         clinicalRecords: {
@@ -59,6 +72,7 @@ export default async function PatientDetailPage({
   if (!patient) notFound();
 
   const services: ServicePickerOption[] = rawServices;
+  const pets: PatientPickerOption[] = patient.client.patients;
 
   const dto: PatientDTO = {
     patientId: patient.patientId,
@@ -85,6 +99,7 @@ export default async function PatientDetailPage({
       clientName={`${patient.client.firstName} ${patient.client.lastName}`}
       initialRecords={records}
       services={services}
+      pets={pets}
       canWritePatient={canWritePatient}
       canReadClinical={canReadClinical}
       canWriteClinical={canWriteClinical}

@@ -30,6 +30,7 @@ import type {
   ClinicalRecordDTO,
   MedicalRecordDTO,
   PatientDTO,
+  PatientPickerOption,
   ServicePickerOption,
 } from "@/types/entities";
 import PatientFormDialog from "./PatientFormDialog";
@@ -42,6 +43,8 @@ interface Props {
   clientName: string;
   initialRecords: ClinicalRecordDTO[];
   services: ServicePickerOption[];
+  /** Every live pet of the owner, this one included. */
+  pets: PatientPickerOption[];
   canWritePatient: boolean;
   canReadClinical: boolean;
   canWriteClinical: boolean;
@@ -66,6 +69,7 @@ export default function PatientDetail({
   clientName,
   initialRecords,
   services,
+  pets,
   canWritePatient,
   canReadClinical,
   canWriteClinical,
@@ -340,10 +344,16 @@ export default function PatientDetail({
       />
       <AddRecordDialog
         open={recordOpen}
+        clientId={patient.clientId}
         patientId={patient.patientId}
+        pets={pets}
         services={services}
         onClose={() => setRecordOpen(false)}
-        onSaved={() => void reloadRecords()}
+        // The sitting can file for a sibling; only this pet's timeline is
+        // on screen, so only a record for this pet is worth a refetch.
+        onSaved={(savedFor) => {
+          if (savedFor === patient.patientId) void reloadRecords();
+        }}
       />
 
       {/* Sending clinical history off the premises is worth one deliberate

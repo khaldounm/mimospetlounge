@@ -105,6 +105,16 @@ export interface PatientOption {
   label: string;
 }
 
+// The owner's pets as the add-record dialog offers them, so a sitting can move
+// from one to the next without leaving the form. Breed and species are there
+// to tell apart two pets that share a name and an owner, which happens.
+export interface PatientPickerOption {
+  patientId: number;
+  name: string;
+  species: string | null;
+  breed: string | null;
+}
+
 export interface ClinicalRecordDTO {
   recordId: number;
   recordType: RecordType;

@@ -261,25 +261,6 @@ export function rangeSummary(
 
 export type ComparisonMode = "mom" | "yoy";
 
-// Same day number, `months` calendar months away, clamped to the target month's
-// last day so Mar 31 lands on Feb 28 rather than spilling into March.
-function shiftLocalDate(value: string, months: number): string {
-  const d = parseLocalDate(value);
-  const target = new Date(d.getFullYear(), d.getMonth() + months, 1);
-  const lastDay = new Date(
-    target.getFullYear(),
-    target.getMonth() + 1,
-    0,
-  ).getDate();
-  return formatLocalDate(
-    new Date(
-      target.getFullYear(),
-      target.getMonth(),
-      Math.min(d.getDate(), lastDay),
-    ),
-  );
-}
-
 // The equivalent window one month (MoM) or one year (YoY) earlier. Shifting by
 // calendar month rather than by a fixed day count is what makes a part-finished
 // month compare like for like: Aug 1-25 reads against Jul 1-25, not against a
@@ -290,7 +271,45 @@ export function priorRange(
 ): AnalyticsRange {
   const months = mode === "mom" ? -1 : -12;
   return {
-    from: shiftLocalDate(range.from, months),
-    to: shiftLocalDate(range.to, months),
+    from: shiftLocalDate(range.from, { months }),
+    to: shiftLocalDate(range.to, { months }),
   };
+}
+
+// ---- Date-only arithmetic ----
+
+// Whether a string is the "YYYY-MM-DD" an <input type="date"> holds. A date
+// input reports "" while it is being typed, and a shift from "" is nonsense.
+export function isDateInput(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+// "YYYY-MM-DD" moved by whole months and/or days, in local time like the rest
+// of this file. Month steps keep the day number and clamp to the end of the
+// target month: Mar 31 back a month is Feb 28, not Mar 3, and a booster given
+// on 31 Jan is due 28 Feb. Days are applied after months so "+1 month" and
+// "+21 days" each mean exactly what they say. Shared by the period-over-period
+// comparison above and the recall presets on a clinical record.
+export function shiftLocalDate(
+  date: string,
+  by: { days?: number; months?: number },
+): string {
+  const d = parseLocalDate(date);
+  if (by.months) {
+    const day = d.getDate();
+    d.setDate(1);
+    d.setMonth(d.getMonth() + by.months);
+    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    d.setDate(Math.min(day, last));
+  }
+  if (by.days) d.setDate(d.getDate() + by.days);
+  return formatLocalDate(d);
+}
+
+// Whole days from one "YYYY-MM-DD" to another, negative when `to` is earlier.
+// Rounded because a DST change makes one of the days 23 or 25 hours long.
+export function daysBetweenLocal(from: string, to: string): number {
+  return Math.round(
+    (parseLocalDate(to).getTime() - parseLocalDate(from).getTime()) / DAY_MS,
+  );
 }

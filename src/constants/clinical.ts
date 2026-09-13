@@ -76,3 +76,58 @@ export function categoriesForRecordType(recordType: RecordType): string[] {
 export const MAPPED_CATEGORIES: ReadonlySet<string> = new Set(
   RECORD_TYPES.flatMap(categoriesForRecordType).map(normalizeCategory),
 );
+
+// ---- The add-record form ----
+
+// Sentinel for "this was not one of our services". Never stored: the form turns
+// it into an undefined subcategory and lets the vet type a free title.
+export const CUSTOM_SUBCATEGORY = "__other__";
+
+// The type-specific fields of a record, in the rows the form draws them in. A
+// pair shares a row when both are short codes read together (a vaccine's lot
+// and its maker); narrative fields take a row each.
+export const RECORD_DETAIL_ROWS: Record<
+  RecordType,
+  readonly (readonly string[])[]
+> = {
+  Consultation: [["chiefComplaint"], ["assessment"], ["plan"], ["medication"]],
+  Vaccination: [["lotNumber", "manufacturer"]],
+  Grooming: [["coatCondition"]],
+  Treatment: [["procedure"], ["findings"], ["result"]],
+};
+
+export const RECORD_DETAIL_LABELS: Record<string, string> = {
+  chiefComplaint: "Chief complaint",
+  assessment: "Assessment / diagnosis",
+  plan: "Treatment plan",
+  medication: "Medication",
+  lotNumber: "Lot number",
+  manufacturer: "Manufacturer",
+  coatCondition: "Coat condition",
+  procedure: "Procedure",
+  findings: "Findings",
+  result: "Result / outcome",
+};
+
+// Next-due shortcuts. Counted from the performed date rather than from today,
+// so a record entered a week late still recalls a year after the jab.
+export const NEXT_DUE_PRESETS: readonly {
+  label: string;
+  days?: number;
+  months?: number;
+}[] = [
+  { label: "+3 wk", days: 21 },
+  { label: "+1 mo", months: 1 },
+  { label: "+3 mo", months: 3 },
+  { label: "+6 mo", months: 6 },
+  { label: "+1 yr", months: 12 },
+];
+
+// A sitting (one owner's pets being written up in one go) is kept in the
+// browser this long after its last edit or save, so a failed request, a
+// mis-click on the backdrop or a reload never costs the vet the form. A day
+// covers a save that failed at closing time and is retried next morning.
+export const RECORD_SITTING_TTL_MS = 24 * 60 * 60 * 1000;
+
+// Services offered as one-click chips inside a sitting, most recent first.
+export const RECORD_SITTING_RECENT_LIMIT = 8;

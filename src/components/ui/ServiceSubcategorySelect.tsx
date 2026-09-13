@@ -2,12 +2,9 @@
 
 import { ListSubheader, MenuItem, TextField } from "@mui/material";
 import { groupServicesForRecordType } from "@/utils/service-picker";
+import { CUSTOM_SUBCATEGORY } from "@/constants/clinical";
 import type { ServicePickerOption } from "@/types/entities";
 import type { RecordType } from "@/types/enums";
-
-// Sentinel for "this was not one of our services". Never stored: callers turn it
-// into an undefined subcategory and let the vet type a free title.
-export const CUSTOM_SUBCATEGORY = "__other__";
 
 interface Props {
   label: string;

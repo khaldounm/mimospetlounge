@@ -1,266 +1,400 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  Box,
   Button,
+  Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   MenuItem,
+  Snackbar,
   Stack,
   TextField,
+  Typography,
 } from "@mui/material";
-import { apiRequest } from "@/utils/api-client";
 import { RECORD_TYPES, type RecordType } from "@/types/enums";
-import type { ServicePickerOption } from "@/types/entities";
-import { recordTypeForCategory } from "@/constants/clinical";
-import ServiceSubcategorySelect, {
+import type {
+  PatientPickerOption,
+  ServicePickerOption,
+} from "@/types/entities";
+import {
   CUSTOM_SUBCATEGORY,
-} from "@/components/ui/ServiceSubcategorySelect";
+  RECORD_DETAIL_LABELS,
+  RECORD_DETAIL_ROWS,
+} from "@/constants/clinical";
+import { useRecordSitting, type SavedRecord } from "@/hooks/useRecordSitting";
+import {
+  isCustomEntry,
+  memoryMatches,
+  petChipLabels,
+} from "@/utils/clinical-record";
+import { formatDateTime, formatTime, todayForDateInput } from "@/utils/format";
+import { formatLocalDate } from "@/utils/date-range";
+import ServiceAutocomplete from "@/components/ui/ServiceAutocomplete";
+import DueDatePresets from "@/components/ui/DueDatePresets";
 import VitalsFields from "./VitalsFields";
 
 interface Props {
   open: boolean;
+  clientId: number;
+  /** The pet whose page this is. */
   patientId: number;
+  /** Every live pet of the owner, this one included. */
+  pets: PatientPickerOption[];
   services: ServicePickerOption[];
   onClose: () => void;
-  onSaved: () => void;
+  /** A record landed for this pet; the page refreshes its own timeline. */
+  onSaved: (patientId: number) => void;
 }
 
-const EMPTY_DETAILS: Record<RecordType, Record<string, string>> = {
-  Consultation: {
-    chiefComplaint: "",
-    assessment: "",
-    plan: "",
-    medication: "",
-  },
-  Vaccination: { lotNumber: "", manufacturer: "" },
-  Grooming: { coatCondition: "" },
-  Treatment: { procedure: "", findings: "", result: "" },
-};
-
-const DETAIL_LABELS: Record<string, string> = {
-  chiefComplaint: "Chief complaint",
-  assessment: "Assessment / diagnosis",
-  plan: "Treatment plan",
-  medication: "Medication",
-  lotNumber: "Lot number",
-  manufacturer: "Manufacturer",
-  coatCondition: "Coat condition",
-  procedure: "Procedure",
-  findings: "Findings",
-  result: "Result / outcome",
-};
-
-const SUBCATEGORY_LABEL: Record<RecordType, string> = {
-  Consultation: "Service type",
-  Vaccination: "Vaccine",
-  Grooming: "Service",
-  Treatment: "Service type",
-};
-
+// One sitting, not one record: the dialog stays open across the records of a
+// visit and across the owner's pets, and its state outlives a close (see
+// useRecordSitting). The form is mounted only while open, so it reads the
+// stored sitting fresh each time it is shown.
 export default function AddRecordDialog({ open, onClose, ...rest }: Props) {
+  // Written by the form, read by the backdrop handler: a click outside must
+  // not close a form that has unsaved content. Escape still does, and the
+  // content survives that too, but a mis-click is the common accident.
+  const dirty = useRef(false);
+  const [toast, setToast] = useState<string | null>(null);
+
   return (
-    <Dialog open={open} onClose={onClose} fullWidth maxWidth="sm">
-      {open && (
-        <AddRecordForm key={rest.patientId} onClose={onClose} {...rest} />
-      )}
-    </Dialog>
+    <>
+      <Dialog
+        open={open}
+        fullWidth
+        maxWidth="sm"
+        onClose={(_e, reason) => {
+          if (reason === "backdropClick" && dirty.current) return;
+          onClose();
+        }}
+      >
+        {open && (
+          <SittingForm
+            key={rest.clientId}
+            onClose={onClose}
+            onToast={setToast}
+            dirtyRef={dirty}
+            {...rest}
+          />
+        )}
+      </Dialog>
+      {/* Outside the dialog so a "draft kept" notice outlives the close, and
+          above it: the snackbar layer sits over the modal one. */}
+      <Snackbar
+        open={toast !== null}
+        autoHideDuration={3500}
+        onClose={() => setToast(null)}
+        message={toast ?? ""}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      />
+    </>
   );
 }
 
-type FormProps = Omit<Props, "open">;
+interface FormProps extends Omit<Props, "open"> {
+  onToast: (message: string) => void;
+  dirtyRef: React.RefObject<boolean>;
+}
 
-function AddRecordForm({ patientId, services, onClose, onSaved }: FormProps) {
-  const [recordType, setRecordType] = useState<RecordType>("Consultation");
-  const [subcategory, setSubcategory] = useState("");
-  const [title, setTitle] = useState("");
-  const [notes, setNotes] = useState("");
-  const [performedAt, setPerformedAt] = useState(() =>
-    new Date().toISOString().slice(0, 10),
-  );
-  const [nextDueDate, setNextDueDate] = useState("");
-  // Vitals at this visit. Blank means not taken, and stays blank.
-  const [temperature, setTemperature] = useState("");
-  const [weight, setWeight] = useState("");
-  const [details, setDetails] = useState<Record<string, string>>(() => ({
-    ...EMPTY_DETAILS.Consultation,
-  }));
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+function SittingForm({
+  clientId,
+  patientId,
+  pets,
+  services,
+  onClose,
+  onSaved,
+  onToast,
+  dirtyRef,
+}: FormProps) {
+  const sitting = useRecordSitting({ clientId, patientId, services });
+  const { draft } = sitting;
+  const serviceInput = useRef<HTMLInputElement>(null);
+  const [notesOpen, setNotesOpen] = useState(false);
 
-  function changeType(type: RecordType) {
-    setRecordType(type);
-    setSubcategory("");
-    setTitle("");
-    setDetails({ ...EMPTY_DETAILS[type] });
+  useEffect(() => {
+    dirtyRef.current = sitting.dirty;
+    return () => {
+      dirtyRef.current = false;
+    };
+  }, [sitting.dirty, dirtyRef]);
+
+  const labels = useMemo(() => petChipLabels(pets), [pets]);
+  const petName = labels[draft.patientId] ?? "";
+  const custom = isCustomEntry(draft);
+  const showNotes = notesOpen || draft.notes !== "";
+
+  const restoredLabel = useMemo(() => {
+    if (sitting.restoredAt === null) return null;
+    const at = new Date(sitting.restoredAt);
+    const iso = at.toISOString();
+    return formatLocalDate(at) === todayForDateInput()
+      ? formatTime(iso)
+      : formatDateTime(iso);
+  }, [sitting.restoredAt]);
+
+  function announce(saved: SavedRecord) {
+    onToast(`Saved ${saved.title} for ${labels[saved.patientId] ?? "the pet"}`);
+    onSaved(saved.patientId);
   }
 
-  // Switching type because a service was picked must not throw away anything
-  // already typed, so carry over the fields the two types share rather than
-  // resetting to blanks the way an explicit type change does.
-  function retypeForService(type: RecordType) {
-    setRecordType(type);
-    setDetails((prev) => {
-      const next: Record<string, string> = { ...EMPTY_DETAILS[type] };
-      for (const key of Object.keys(next)) {
-        if (prev[key]) next[key] = prev[key];
-      }
-      return next;
-    });
+  async function saveAndContinue() {
+    if (sitting.saving) return;
+    const saved = await sitting.save();
+    if (!saved) return;
+    announce(saved);
+    setNotesOpen(false);
+    // The next record starts with its service.
+    serviceInput.current?.focus();
   }
 
-  function changeSubcategory(value: string) {
-    setSubcategory(value);
-    if (value === CUSTOM_SUBCATEGORY) {
-      setTitle("");
-      return;
+  async function saveAndClose() {
+    if (sitting.saving) return;
+    const saved = await sitting.save();
+    if (!saved) return;
+    announce(saved);
+    // Nothing is unsaved after a save, so the sitting ends here.
+    sitting.discard();
+    onClose();
+  }
+
+  function close() {
+    const { kept } = sitting.finish();
+    if (kept) {
+      onToast(`Draft kept for ${petName}. Open Add record to pick it up.`);
     }
-    setTitle(value);
-
-    // The service's category decides how the record is filed, and because a
-    // recall carries its record's type, that is also what routes the reminder.
-    // Unmapped categories leave the vet's own choice of type alone.
-    const picked = services.find((s) => s.name === value);
-    const mapped = recordTypeForCategory(picked?.category);
-    if (mapped && mapped !== recordType) retypeForService(mapped);
+    onClose();
   }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSaving(true);
-    try {
-      await apiRequest(`/api/patients/${patientId}/records`, {
-        method: "POST",
-        body: {
-          recordType,
-          subcategory:
-            subcategory && subcategory !== CUSTOM_SUBCATEGORY
-              ? subcategory
-              : undefined,
-          title,
-          notes,
-          performedAt,
-          nextDueDate,
-          temperature,
-          weight,
-          details,
-        },
-      });
-      onSaved();
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // Say out loud where the pick just filed the record, so an auto-switched type
-  // reads as a decision the form made rather than a field changing on its own.
-  const pickedCategory = services.find((s) => s.name === subcategory)?.category;
-  const filingHint =
-    pickedCategory && recordTypeForCategory(pickedCategory)
-      ? `${pickedCategory} is filed as ${recordType}. A next due date raises a ${recordType} recall.`
-      : undefined;
 
   return (
-    <form onSubmit={handleSubmit}>
-      <DialogTitle>Add clinical record</DialogTitle>
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        void saveAndContinue();
+      }}
+      onKeyDown={(e) => {
+        // Enter already submits from a single-line field; this is for the
+        // notes textarea, where a bare Enter is a new line.
+        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          void saveAndContinue();
+        }
+      }}
+    >
+      <DialogTitle>Add record for {petName}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
-          {error && <Alert severity="error">{error}</Alert>}
+          {restoredLabel && (
+            <Alert
+              severity="info"
+              action={
+                <Button color="inherit" size="small" onClick={sitting.reset}>
+                  Start fresh
+                </Button>
+              }
+            >
+              Picked up where you left off ({restoredLabel}
+              {sitting.totalSaved > 0
+                ? `, ${sitting.totalSaved} saved this sitting`
+                : ""}
+              ).
+            </Alert>
+          )}
+          {sitting.error && <Alert severity="error">{sitting.error}</Alert>}
 
-          <TextField
-            select
-            label="Record type"
-            value={recordType}
-            onChange={(e) => changeType(e.target.value as RecordType)}
-            fullWidth
-          >
-            {RECORD_TYPES.map((t) => (
-              <MenuItem key={t} value={t}>
-                {t}
-              </MenuItem>
-            ))}
-          </TextField>
+          {pets.length > 1 && (
+            <ChipRow label="Pet">
+              {pets.map((p) => {
+                const n = sitting.savedCount(p.patientId);
+                const active = p.patientId === draft.patientId;
+                return (
+                  <Chip
+                    key={p.patientId}
+                    label={
+                      n > 0
+                        ? `${labels[p.patientId]} · ${n}`
+                        : labels[p.patientId]
+                    }
+                    color={active ? "primary" : "default"}
+                    variant={active ? "filled" : "outlined"}
+                    onClick={() => sitting.switchPet(p.patientId)}
+                  />
+                );
+              })}
+            </ChipRow>
+          )}
 
-          <ServiceSubcategorySelect
-            label={SUBCATEGORY_LABEL[recordType]}
-            value={subcategory}
-            recordType={recordType}
-            services={services}
-            onChange={changeSubcategory}
-            helperText={filingHint}
-          />
+          <Stack direction="row" spacing={2}>
+            <Box sx={{ flex: 2, minWidth: 0 }}>
+              <ServiceAutocomplete
+                services={services}
+                value={draft.subcategory}
+                onChange={sitting.pickService}
+                autoFocus
+                inputRef={serviceInput}
+              />
+            </Box>
+            <TextField
+              select
+              label="Record type"
+              value={draft.recordType}
+              onChange={(e) => sitting.setType(e.target.value as RecordType)}
+              sx={{ flex: 1 }}
+            >
+              {RECORD_TYPES.map((t) => (
+                <MenuItem key={t} value={t}>
+                  {t}
+                </MenuItem>
+              ))}
+            </TextField>
+          </Stack>
 
-          <TextField
-            label="Title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-            fullWidth
-          />
+          {sitting.recent.length > 0 && (
+            <ChipRow label="This sitting">
+              {sitting.recent.map((memory) => {
+                const active = memoryMatches(memory, draft);
+                return (
+                  <Chip
+                    key={`${memory.subcategory ?? ""}:${memory.title}`}
+                    label={memory.title}
+                    size="small"
+                    color={active ? "primary" : "default"}
+                    variant={active ? "filled" : "outlined"}
+                    onClick={() => sitting.recallService(memory)}
+                  />
+                );
+              })}
+            </ChipRow>
+          )}
+
+          {custom && (
+            <TextField
+              label="Title"
+              value={draft.title}
+              onChange={(e) => sitting.patch({ title: e.target.value })}
+              required
+              fullWidth
+              // Picking "Other / custom" is a request to type a title; an
+              // empty service on open is not, and the service keeps focus.
+              autoFocus={draft.subcategory === CUSTOM_SUBCATEGORY}
+            />
+          )}
 
           <Stack direction="row" spacing={2}>
             <TextField
               label="Performed at"
               type="date"
-              value={performedAt}
-              onChange={(e) => setPerformedAt(e.target.value)}
+              value={draft.performedAt}
+              onChange={(e) => sitting.patch({ performedAt: e.target.value })}
               slotProps={{ inputLabel: { shrink: true } }}
               fullWidth
             />
             <TextField
               label="Next due date"
               type="date"
-              value={nextDueDate}
-              onChange={(e) => setNextDueDate(e.target.value)}
+              value={draft.nextDueDate}
+              onChange={(e) => sitting.patch({ nextDueDate: e.target.value })}
               slotProps={{ inputLabel: { shrink: true } }}
               fullWidth
             />
           </Stack>
+          <DueDatePresets
+            performedAt={draft.performedAt}
+            value={draft.nextDueDate}
+            onChange={(nextDueDate) => sitting.patch({ nextDueDate })}
+            hint={
+              draft.nextDueDate ? `Raises a ${draft.recordType} recall` : ""
+            }
+          />
 
           <VitalsFields
-            temperature={temperature}
-            weight={weight}
-            onTemperatureChange={setTemperature}
-            onWeightChange={setWeight}
+            temperature={draft.temperature}
+            weight={draft.weight}
+            onTemperatureChange={(temperature) =>
+              sitting.patch({ temperature })
+            }
+            onWeightChange={(weight) => sitting.patch({ weight })}
           />
 
-          {Object.keys(details).map((key) => (
-            <TextField
-              key={key}
-              label={DETAIL_LABELS[key] ?? key}
-              value={details[key]}
-              onChange={(e) =>
-                setDetails((d) => ({ ...d, [key]: e.target.value }))
-              }
-              fullWidth
-            />
+          {RECORD_DETAIL_ROWS[draft.recordType].map((row) => (
+            <Stack key={row.join("+")} direction="row" spacing={2}>
+              {row.map((key) => (
+                <TextField
+                  key={key}
+                  label={RECORD_DETAIL_LABELS[key] ?? key}
+                  value={draft.details[key] ?? ""}
+                  onChange={(e) => sitting.setDetail(key, e.target.value)}
+                  fullWidth
+                />
+              ))}
+            </Stack>
           ))}
 
-          <TextField
-            label="Notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            multiline
-            minRows={2}
-            fullWidth
-          />
+          {showNotes ? (
+            <TextField
+              label="Notes"
+              value={draft.notes}
+              onChange={(e) => sitting.patch({ notes: e.target.value })}
+              multiline
+              minRows={2}
+              fullWidth
+              autoFocus={draft.notes === ""}
+            />
+          ) : (
+            <Box>
+              <Button size="small" onClick={() => setNotesOpen(true)}>
+                Add notes
+              </Button>
+            </Box>
+          )}
         </Stack>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} disabled={saving}>
-          Cancel
+      <DialogActions sx={{ px: 3, pb: 2, flexWrap: "wrap", gap: 1 }}>
+        {sitting.totalSaved > 0 && (
+          <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+            {sitting.totalSaved} saved this sitting
+          </Typography>
+        )}
+        <Button onClick={close} disabled={sitting.saving}>
+          Close
         </Button>
-        <Button type="submit" variant="contained" disabled={saving}>
-          {saving ? "Saving..." : "Save record"}
+        <Button
+          variant="outlined"
+          onClick={() => void saveAndClose()}
+          disabled={sitting.saving}
+        >
+          Save & close
+        </Button>
+        <Button type="submit" variant="contained" disabled={sitting.saving}>
+          {sitting.saving ? "Saving..." : "Save & add another"}
         </Button>
       </DialogActions>
     </form>
+  );
+}
+
+function ChipRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Stack
+      direction="row"
+      spacing={1}
+      useFlexGap
+      sx={{ flexWrap: "wrap", alignItems: "center" }}
+    >
+      <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+        {label}
+      </Typography>
+      {children}
+    </Stack>
   );
 }
