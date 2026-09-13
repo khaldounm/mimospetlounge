@@ -126,9 +126,11 @@ export default function ServiceAutocomplete({
       getOptionKey={(o) => `${o.serviceId}:${o.name}`}
       isOptionEqualToValue={(o, v) => o.name === v.name}
       // Enter on a typed search takes the first match, so "rab", Enter is the
-      // whole pick.
+      // whole pick. The list opens on typing or on the arrow, not on focus:
+      // the field is focused on open and after every save, and a list that
+      // dropped over the form each time would hide the pet and sitting chips
+      // the vet is about to click.
       autoHighlight
-      openOnFocus
       fullWidth
       renderInput={(params) => (
         <TextField
