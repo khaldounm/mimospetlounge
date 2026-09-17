@@ -32,6 +32,9 @@ export interface CostRow {
   // Held as typed text, not numbers: a half-typed "0." must survive a keystroke.
   quantity: string;
   unitCost: string | null;
+  // Whether the item has a cost recorded at all. unitCost is null both when
+  // there is none and when this user may not see it; this tells them apart.
+  costKnown: boolean;
   label: string;
   amount: string;
 }
@@ -44,6 +47,7 @@ export function newItemRow(): CostRow {
     itemName: "",
     quantity: "1",
     unitCost: null,
+    costKnown: true,
     label: "",
     amount: "",
   };
@@ -73,24 +77,31 @@ export function totalCost(rows: CostRow[]): number {
 // sale price and the clinic pays out more than it agreed to. The figure looks
 // perfectly reasonable on screen while being wrong in the clinic's disfavour,
 // which is exactly the kind of error nobody catches.
-export function rowHasNoCost(r: CostRow): boolean {
-  return r.kind === "item" && r.itemId != null && Number(r.unitCost ?? 0) === 0;
+//
+// With the figure in hand (showCost) a recorded cost of exactly zero counts
+// too. Without it only the yes/no is available, and a null unitCost means
+// "not yours to see", not "nothing".
+export function rowHasNoCost(r: CostRow, showCost: boolean): boolean {
+  if (r.kind !== "item" || r.itemId == null) return false;
+  return showCost ? Number(r.unitCost ?? 0) === 0 : !r.costKnown;
 }
 
 function ItemRow({
   row,
   onChange,
   onRemove,
+  showCost,
 }: {
   row: CostRow;
   onChange: (r: CostRow) => void;
   onRemove: () => void;
+  showCost: boolean;
 }) {
   // A row that already names an item has nothing to search for until somebody
   // types in it. A blank row does, so opening the picker offers a starting list.
   const [searching, setSearching] = useState(row.itemId == null);
   const { options, loading } = useCostItemSearch(row.itemName, searching);
-  const noCost = rowHasNoCost(row);
+  const noCost = rowHasNoCost(row, showCost);
 
   return (
     <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start" }}>
@@ -119,8 +130,9 @@ function ItemRow({
                   itemId: v.itemId,
                   itemName: v.name,
                   unitCost: v.lastCost,
+                  costKnown: v.hasCost,
                 }
-              : { ...row, itemId: null, unitCost: null },
+              : { ...row, itemId: null, unitCost: null, costKnown: true },
           )
         }
         renderInput={(params) => (
@@ -128,8 +140,14 @@ function ItemRow({
             {...params}
             label="Item"
             placeholder="Search stock"
-            error={noCost}
-            helperText={noCost ? "No last cost: this adds $0.00" : undefined}
+            error={noCost && showCost}
+            helperText={
+              !noCost
+                ? undefined
+                : showCost
+                  ? "No last cost: this adds $0.00"
+                  : "No cost in Inventory yet. Ask an admin to set it."
+            }
           />
         )}
       />
@@ -142,21 +160,23 @@ function ItemRow({
         slotProps={{ htmlInput: { min: 0, step: "0.001" } }}
         sx={{ width: 100 }}
       />
-      <Box sx={{ width: 80, pt: 1, textAlign: "right" }}>
-        <Typography
-          variant="body2"
-          color={noCost ? "error.main" : undefined}
-          sx={{ fontWeight: noCost ? 700 : undefined }}
-        >
-          {formatMoney(rowCost(row))}
-        </Typography>
-      </Box>
+      {showCost && (
+        <Box sx={{ width: 80, pt: 1, textAlign: "right" }}>
+          <Typography
+            variant="body2"
+            color={noCost ? "error.main" : undefined}
+            sx={{ fontWeight: noCost ? 700 : undefined }}
+          >
+            {formatMoney(rowCost(row))}
+          </Typography>
+        </Box>
+      )}
       {/* Straight to the item, because that is where a cost can be judged: the
           stock on hand, the supplier and what was last paid are all on that
           page, and none of them are here. Deliberately a link and not an edit
           box: this figure prices the item everywhere in the app, so it is
           changed where that is visible. */}
-      {noCost && (
+      {noCost && showCost && (
         <Tooltip title="Set this item's cost in Inventory">
           <IconButton
             size="small"
@@ -221,18 +241,26 @@ function FlatRow({
 // What one performance of the service costs the clinic, built from stock lines
 // and flat amounts. Item lines are priced from the item's current cost rather
 // than a figure captured here, so re-pricing stock re-prices the service.
+//
+// Without `showCost` the stock side is blind: item and quantity, no figure,
+// no total, no margin, and an uncosted item is a quiet note rather than the
+// red warning, because the money it describes is not this user's to see. Flat
+// rows are theirs (gloves, a mask, an outside fee) and show as typed. The
+// pricing still happens, server-side, when an invoice issues.
 export default function ServiceCostBuilder({
   rows,
   onChange,
   price,
+  showCost,
 }: {
   rows: CostRow[];
   onChange: (rows: CostRow[]) => void;
   price: string;
+  showCost: boolean;
 }) {
   const cost = totalCost(rows);
   const margin = (Number(price) || 0) - cost;
-  const noCostRows = rows.filter(rowHasNoCost);
+  const noCostRows = rows.filter((r) => rowHasNoCost(r, showCost));
 
   function update(key: string, next: CostRow) {
     onChange(rows.map((r) => (r.key === key ? next : r)));
@@ -243,6 +271,11 @@ export default function ServiceCostBuilder({
       <Typography variant="subtitle2" color="text.secondary">
         What it costs to perform
       </Typography>
+      {!showCost && (
+        <Typography variant="caption" color="text.secondary">
+          Stock is costed from Inventory when the invoice is issued.
+        </Typography>
+      )}
 
       {rows.map((row) =>
         row.kind === "item" ? (
@@ -251,6 +284,7 @@ export default function ServiceCostBuilder({
             row={row}
             onChange={(next) => update(row.key, next)}
             onRemove={() => onChange(rows.filter((r) => r.key !== row.key))}
+            showCost={showCost}
           />
         ) : (
           <FlatRow
@@ -262,7 +296,16 @@ export default function ServiceCostBuilder({
         ),
       )}
 
-      {noCostRows.length > 0 && (
+      {noCostRows.length > 0 && !showCost && (
+        <Alert severity="warning" icon={<WarningAmberIcon />}>
+          {noCostRows.map((r) => r.itemName).join(", ")}{" "}
+          {noCostRows.length === 1 ? "has" : "have"} no cost in Inventory, so
+          this service will be costed without{" "}
+          {noCostRows.length === 1 ? "it" : "them"} until an admin sets one.
+        </Alert>
+      )}
+
+      {noCostRows.length > 0 && showCost && (
         <Alert severity="error" icon={<WarningAmberIcon />}>
           <AlertTitle sx={{ fontWeight: 700 }}>
             {noCostRows.length === 1
@@ -302,7 +345,7 @@ export default function ServiceCostBuilder({
         </Button>
       </Stack>
 
-      {rows.length > 0 && (
+      {showCost && rows.length > 0 && (
         <Box
           sx={{
             p: 1.5,

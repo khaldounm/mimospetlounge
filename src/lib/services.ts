@@ -48,7 +48,19 @@ export function toCostComponentDTO(
     label: c.label,
     amount: c.amount?.toFixed(2) ?? null,
     lineCost: componentCost(c).toFixed(2),
+    costKnown: c.itemId == null || c.item?.lastCost != null,
   };
+}
+
+// The same row for a caller who may edit the recipe but not see what stock
+// costs: a stock line is the item and how much of it, unpriced; a flat row is
+// exactly what was typed, because that figure is the editor's own and not a
+// supplier price. lineCost is null on every row so nothing client-side can
+// add them up into a total this caller is not allowed.
+export function toBlindCostComponentDTO(
+  c: CostComponentRow,
+): ServiceCostComponentDTO {
+  return { ...toCostComponentDTO(c), lineCost: null };
 }
 
 // What the whole service costs to perform once. Zero for a service with no

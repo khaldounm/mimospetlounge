@@ -1,11 +1,7 @@
 import { liveSession } from "@/lib/session-user";
 import { prisma } from "@/lib/prisma";
-import {
-  canSeeCost,
-  canSeePartnerDeal,
-  hasPermission,
-} from "@/lib/permissions";
-import { toServiceDTO } from "@/lib/invoices";
+import { canSeePartnerDeal, hasPermission } from "@/lib/permissions";
+import { serviceVisibility, toServiceDTO } from "@/lib/invoices";
 import { costComponentInclude } from "@/lib/services";
 import ServicesTable from "@/components/invoices/ServicesTable";
 
@@ -18,15 +14,19 @@ export default async function ServicesPage() {
   // partner role reads the column without being able to change it.
   const canEditDeal = hasPermission(session?.user, "partners:write");
   // Cost rides on orders:*, the same split that keeps purchase prices away from
-  // clinical staff. See canSeeCost.
-  const visible = { deal: canSeeDeal, cost: canSeeCost(session?.user) };
-  const canEditCost = hasPermission(session?.user, "orders:write");
+  // clinical staff. See canSeeCost. Editing the recipe is orders:write and is
+  // NOT the same as seeing what it costs: a Vet with purchasing builds the
+  // stock lines blind, and the figures stay Admin's.
+  const visible = serviceVisibility(session?.user);
+  const canEditCost = visible.recipe;
 
   const services = await prisma.service.findMany({
     orderBy: { name: "asc" },
     include: {
       ...(visible.deal ? { partner: { select: { name: true } } } : {}),
-      ...(visible.cost ? { costComponents: costComponentInclude } : {}),
+      ...(visible.cost || visible.recipe
+        ? { costComponents: costComponentInclude }
+        : {}),
     },
   });
 

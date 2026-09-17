@@ -3,9 +3,16 @@ import { prisma } from "@/lib/prisma";
 import {
   componentCost,
   serviceCostTotal,
+  toBlindCostComponentDTO,
   toCostComponentDTO,
   type CostComponentRow,
 } from "@/lib/services";
+import {
+  canSeeCost,
+  canSeePartnerDeal,
+  hasPermission,
+  type PermissionHolder,
+} from "@/lib/permissions";
 import { ApiError } from "@/lib/api";
 import { applyStockMovementTx, isStockCheckViolation } from "@/lib/inventory";
 import { looseConfigOf, looseLine, minLooseQuantity } from "@/utils/inventory";
@@ -68,7 +75,24 @@ type ServiceRow = {
 // different things, and at a call site `false, true` says nothing.
 export interface ServiceVisibility {
   deal: boolean; // partners:read  (who performs it and their cut)
-  cost: boolean; // orders:read    (what performing it costs the clinic)
+  cost: boolean; // canSeeCost     (what performing it costs the clinic)
+  // orders:write: the recipe itself. Whoever may edit it has to be able to
+  // see it, or a save from a form that arrived empty would replace it with
+  // nothing. Without `cost` the stock lines come unpriced (item and quantity)
+  // and the flat rows come as typed; see toBlindCostComponentDTO.
+  recipe: boolean;
+}
+
+// One answer per user, so the page and the four routes cannot drift apart on
+// which of the three they compute from what.
+export function serviceVisibility(
+  user: PermissionHolder | null | undefined,
+): ServiceVisibility {
+  return {
+    deal: canSeePartnerDeal(user),
+    cost: canSeeCost(user),
+    recipe: hasPermission(user, "orders:write"),
+  };
 }
 
 type LineItemRow = {
@@ -307,7 +331,11 @@ export function toServiceDTO(
     partnerProfitPct: visible.deal
       ? (s.partnerProfitPct?.toString() ?? null)
       : null,
-    costComponents: visible.cost ? components.map(toCostComponentDTO) : null,
+    costComponents: visible.cost
+      ? components.map(toCostComponentDTO)
+      : visible.recipe
+        ? components.map(toBlindCostComponentDTO)
+        : null,
     costTotal: visible.cost ? serviceCostTotal(components).toFixed(2) : null,
   };
 }

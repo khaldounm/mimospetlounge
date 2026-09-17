@@ -164,6 +164,10 @@ export interface InventoryItemDTO {
   reorderLevel: number;
   salePrice: string | null;
   lastCost: string | null;
+  // Whether a last cost is recorded at all. A yes/no, not a figure, so it is
+  // not gated: it lets someone who may not see cost still be told that a
+  // service recipe will be costed without this item until an admin sets one.
+  hasCost: boolean;
   // Consignment: the sourcing partner (null = clinic-owned) and the agreed
   // profit-share %, which falls back to the partner default when unset.
   partnerId: number | null;
@@ -224,9 +228,13 @@ export interface ServiceDTO {
   partnerCostPct: string | null; // per-service override, null = partner default
   partnerProfitPct: string | null; // per-service override, null = partner default
   // What performing it costs the clinic, and what that figure is made of. Both
-  // null (not empty, not zero) for a caller without orders:read: an itemised
-  // cost discloses exactly what an item's lastCost does, so it takes the same
-  // gate. See canSeeCost.
+  // null (not empty, not zero) for a caller who may neither see nor edit the
+  // recipe: an itemised cost discloses exactly what an item's lastCost does,
+  // so it takes the same gate. See canSeeCost. A caller who may edit the
+  // recipe but not see cost (orders:write without Admin) gets every row with
+  // lineCost null: stock lines as item and quantity, flat rows as typed (a
+  // flat amount is the editor's own figure, not a supplier price). costTotal
+  // stays null for them, since it would carry the stock costs.
   costComponents: ServiceCostComponentDTO[] | null;
   costTotal: string | null;
 }
@@ -242,7 +250,11 @@ export interface ServiceCostComponentDTO {
   amount: string | null;
   // The money this row contributes, resolved server-side: an item line is
   // quantity x the item's current lastCost, so it moves when stock re-prices.
-  lineCost: string;
+  // Null when the caller may not see cost: unknown, not zero.
+  lineCost: string | null;
+  // Whether the item has a last cost recorded. Always true for a flat row. A
+  // yes/no so the recipe editor can flag an uncosted item without a figure.
+  costKnown: boolean;
 }
 
 // One day in a partner's month: whether they were here, what their work earned,

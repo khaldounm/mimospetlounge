@@ -34,10 +34,15 @@ interface Props {
   // hides the section outright: the DTO has already stripped the figures, so
   // there would be nothing to show and nothing the save could carry.
   canEditDeal: boolean;
-  // Whether this user may set what the service costs. Same reasoning as
-  // canEditDeal: without it the DTO carries no cost, so there is nothing to
-  // edit and nothing the save could send.
+  // Whether this user may edit the recipe (orders:write). Without it the DTO
+  // carries no components, so there is nothing to edit and nothing the save
+  // could send.
   canEditCost: boolean;
+  // Whether the stock costs come with it (Admin). A recipe editor without
+  // this sees stock lines as item and quantity, flat rows as typed, and no
+  // total or margin: the DTO arrived with every lineCost null, and the
+  // builder must not paint those nulls as $0.00.
+  showCost: boolean;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -63,7 +68,7 @@ type FormProps = Omit<Props, "open">;
 // The saved components, as editable rows. An item line keeps its unit cost so
 // the on-screen total is right before anything is re-searched: lineCost divided
 // by quantity recovers it, and a zero quantity cannot occur (the DB CHECK
-// forbids it).
+// forbids it). A null lineCost (cost hidden from this user) stays null.
 function toRows(service: ServiceDTO | null | undefined): CostRow[] {
   return (service?.costComponents ?? []).map((c) => ({
     key: String(c.componentId),
@@ -72,9 +77,10 @@ function toRows(service: ServiceDTO | null | undefined): CostRow[] {
     itemName: c.itemName ?? "",
     quantity: c.quantity ?? "",
     unitCost:
-      c.itemId != null && c.quantity
+      c.itemId != null && c.quantity && c.lineCost != null
         ? String(Number(c.lineCost) / Number(c.quantity))
         : null,
+    costKnown: c.costKnown,
     label: c.label ?? "",
     amount: c.amount ?? "",
   }));
@@ -85,6 +91,7 @@ function ServiceForm({
   categoryOptions,
   canEditDeal,
   canEditCost,
+  showCost,
   onClose,
   onSaved,
 }: FormProps) {
@@ -273,6 +280,7 @@ function ServiceForm({
               rows={costRows}
               onChange={setCostRows}
               price={String(price)}
+              showCost={showCost}
             />
           )}
           {canEditDeal && (

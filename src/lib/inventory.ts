@@ -110,6 +110,7 @@ export function toInventoryItemDTO(
     reorderLevel: i.reorderLevel,
     salePrice: i.salePrice ? i.salePrice.toString() : null,
     lastCost: canSeeCost && i.lastCost ? i.lastCost.toString() : null,
+    hasCost: i.lastCost != null,
     partnerId: i.partnerId,
     partnerName: i.partner?.name ?? null,
     partnerCostPct: i.partnerCostPct ? i.partnerCostPct.toString() : null,

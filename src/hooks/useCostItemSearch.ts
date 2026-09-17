@@ -10,6 +10,8 @@ export interface CostItemOption {
   name: string;
   unit: string | null;
   lastCost: string | null;
+  // Whether one is recorded at all: the only cost fact a non-admin gets.
+  hasCost: boolean;
 }
 
 const DEBOUNCE_MS = 250;
@@ -17,7 +19,8 @@ const DEBOUNCE_MS = 250;
 // Type-to-search over stock for the service cost builder. Distinct from
 // useItemSearch, which reads the analytics endpoint and deliberately returns no
 // cost: pricing a recipe on screen needs lastCost, and /api/inventory is the
-// endpoint that serves it, already stripped for anyone without orders:read.
+// endpoint that serves it, already stripped for anyone who may not see cost
+// (see canSeeCost), in which case every option arrives with lastCost null.
 //
 // A request id guards against out-of-order responses, so a slow reply for a
 // short prefix cannot overwrite the results for what was typed after it.
@@ -58,6 +61,7 @@ export function useCostItemSearch(
               name: i.name,
               unit: i.unit,
               lastCost: i.lastCost,
+              hasCost: i.hasCost,
             })),
           );
         } catch {

@@ -1,13 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ApiError, handle, parseBody, requirePermission } from "@/lib/api";
-import {
-  canSeeCost,
-  canSeePartnerDeal,
-  hasPermission,
-} from "@/lib/permissions";
+import { hasPermission } from "@/lib/permissions";
 import { costComponentInclude } from "@/lib/services";
-import { toServiceDTO } from "@/lib/invoices";
+import { serviceVisibility, toServiceDTO } from "@/lib/invoices";
 import { writeAudit } from "@/lib/audit";
 import {
   serviceUpdateSchema,
@@ -29,16 +25,15 @@ export async function GET(
   return handle(async () => {
     const session = await requirePermission("invoices:read");
     const serviceId = await getServiceId(params);
-    const visible = {
-      deal: canSeePartnerDeal(session.user),
-      cost: canSeeCost(session.user),
-    };
+    const visible = serviceVisibility(session.user);
 
     const service = await prisma.service.findUnique({
       where: { serviceId },
       include: {
         ...(visible.deal ? { partner: { select: { name: true } } } : {}),
-        ...(visible.cost ? { costComponents: costComponentInclude } : {}),
+        ...(visible.cost || visible.recipe
+          ? { costComponents: costComponentInclude }
+          : {}),
       },
     });
     if (!service) throw new ApiError(404, "Service not found");
@@ -54,6 +49,7 @@ export async function PATCH(
   return handle(async () => {
     const session = await requirePermission("invoices:write");
     const serviceId = await getServiceId(params);
+    const visible = serviceVisibility(session.user);
     const data = await parseBody(request, serviceUpdateSchema);
     // See the POST handler: the deal is a partners:write term, not catalogue
     // upkeep, so reception editing a price cannot move a partner's cut.
@@ -96,6 +92,8 @@ export async function PATCH(
         // the existing components untouched, which is what lets a price edit
         // stay a price edit. Nested writes run inside the update's own
         // transaction, so a service is never briefly left with no cost.
+        // Safe for a caller who cannot see cost too: they were sent every row
+        // (unpriced), so what they send back is the whole list, not a subset.
         ...(data.costComponents
           ? {
               costComponents: {
@@ -118,12 +116,7 @@ export async function PATCH(
       changes: data,
     });
 
-    return NextResponse.json({
-      service: toServiceDTO(service, {
-        deal: canSeePartnerDeal(session.user),
-        cost: canSeeCost(session.user),
-      }),
-    });
+    return NextResponse.json({ service: toServiceDTO(service, visible) });
   });
 }
 

@@ -50,10 +50,10 @@ export default async function InvoiceDetailPage({
   // the current setting until it is issued.
   const fxRate = invoice.fxRate ? invoice.fxRate.toNumber() : currentFxRate;
 
-  // Both false: the picker keeps only id, name and price, so the deal and cost
-  // figures would be built and thrown away. Their joins are skipped too.
+  // All false: the picker keeps only id, name and price, so the deal, cost and
+  // recipe would be built and thrown away. Their joins are skipped too.
   const serviceOptions: ServiceLineOption[] = services
-    .map((s) => toServiceDTO(s, { deal: false, cost: false }))
+    .map((s) => toServiceDTO(s, { deal: false, cost: false, recipe: false }))
     .map((s) => ({ serviceId: s.serviceId, name: s.name, price: s.price }));
 
   const itemOptions: ItemLineOption[] = items

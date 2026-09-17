@@ -1,13 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ApiError, handle, parseBody, requirePermission } from "@/lib/api";
-import {
-  canSeeCost,
-  canSeePartnerDeal,
-  hasPermission,
-} from "@/lib/permissions";
+import { hasPermission } from "@/lib/permissions";
 import { costComponentInclude } from "@/lib/services";
-import { toServiceDTO } from "@/lib/invoices";
+import { serviceVisibility, toServiceDTO } from "@/lib/invoices";
 import { writeAudit } from "@/lib/audit";
 import {
   serviceCreateSchema,
@@ -18,10 +14,7 @@ import {
 export async function GET(request: Request) {
   return handle(async () => {
     const session = await requirePermission("invoices:read");
-    const visible = {
-      deal: canSeePartnerDeal(session.user),
-      cost: canSeeCost(session.user),
-    };
+    const visible = serviceVisibility(session.user);
 
     const sp = new URL(request.url).searchParams;
     const q = sp.get("q")?.trim();
@@ -44,7 +37,9 @@ export async function GET(request: Request) {
       // result stripped back out again.
       include: {
         ...(visible.deal ? { partner: { select: { name: true } } } : {}),
-        ...(visible.cost ? { costComponents: costComponentInclude } : {}),
+        ...(visible.cost || visible.recipe
+          ? { costComponents: costComponentInclude }
+          : {}),
       },
     });
 
@@ -57,6 +52,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   return handle(async () => {
     const session = await requirePermission("invoices:write");
+    const visible = serviceVisibility(session.user);
     const data = await parseBody(request, serviceCreateSchema);
     // Who takes a cut, and how much, is a commercial term rather than catalogue
     // upkeep. Reception and vets maintain services; only a partners:write
@@ -110,12 +106,7 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json(
-      {
-        service: toServiceDTO(service, {
-          deal: canSeePartnerDeal(session.user),
-          cost: canSeeCost(session.user),
-        }),
-      },
+      { service: toServiceDTO(service, visible) },
       { status: 201 },
     );
   });

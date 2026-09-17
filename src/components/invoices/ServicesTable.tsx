@@ -84,7 +84,7 @@ function groupKey(category: string | null): string {
 
 function hasNoCostItem(s: ServiceDTO): boolean {
   return (s.costComponents ?? []).some(
-    (c) => c.itemId != null && Number(c.lineCost) === 0,
+    (c) => c.itemId != null && c.lineCost != null && Number(c.lineCost) === 0,
   );
 }
 
@@ -474,6 +474,7 @@ export default function ServicesTable({
         categoryOptions={categoryOptions}
         canEditDeal={canEditDeal}
         canEditCost={canEditCost}
+        showCost={canSeeCost}
         onClose={() => setDialogOpen(false)}
         onSaved={() => void load(query, activeOnly)}
       />
