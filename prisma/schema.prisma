@@ -140,24 +140,29 @@ model Client {
 }
 
 model Patient {
-  patientId   Int       @id @default(autoincrement()) @map("patient_id")
+  patientId         Int       @id @default(autoincrement()) @map("patient_id")
   // Primary key from the old Access system. See Client.legacyId.
   // See Client.needsReview.
-  needsReview Boolean   @default(false) @map("needs_review")
-  reviewNote  String?   @map("review_note") @db.Text
-  legacyId    Int?      @unique @map("legacy_id")
-  clientId    Int       @map("client_id")
-  name        String    @db.VarChar(100)
-  species     String?   @db.VarChar(50)
-  breed       String?   @db.VarChar(100)
-  dateOfBirth DateTime? @map("date_of_birth") @db.Date
-  sex         String?   @db.VarChar(10)
-  isNeutered  Boolean   @default(false) @map("is_neutered")
-  microchipId String?   @unique @map("microchip_id") @db.VarChar(50)
-  notes       String?   @db.Text
-  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  needsReview       Boolean   @default(false) @map("needs_review")
+  reviewNote        String?   @map("review_note") @db.Text
+  legacyId          Int?      @unique @map("legacy_id")
+  clientId          Int       @map("client_id")
+  name              String    @db.VarChar(100)
+  species           String?   @db.VarChar(50)
+  breed             String?   @db.VarChar(100)
+  dateOfBirth       DateTime? @map("date_of_birth") @db.Date
+  sex               String?   @db.VarChar(10)
+  isNeutered        Boolean   @default(false) @map("is_neutered")
+  microchipId       String?   @unique @map("microchip_id") @db.VarChar(50)
+  notes             String?   @db.Text
+  // The day staff ticked this pet off the upcoming-birthdays list (wishes
+  // sent, or nothing to send). Read against the current birthday window: a
+  // tick inside this year's window counts, last year's does not, so nothing
+  // has to be reset when the year turns over.
+  birthdayGreetedOn DateTime? @map("birthday_greeted_on") @db.Date
+  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
 
   client          Client           @relation(fields: [clientId], references: [clientId], onDelete: Restrict)
   clinicalRecords ClinicalRecord[]
@@ -407,10 +412,10 @@ model SupplierPayment {
 // order never touches profit, since cost reaches the P&L as COGS when the stock
 // sells. What was paid, and when, is tracked separately.
 model PurchaseOrder {
-  orderId        Int       @id @default(autoincrement()) @map("order_id")
+  orderId          Int       @id @default(autoincrement()) @map("order_id")
   // Primary key from the old Access system. See Client.legacyId.
-  legacyId       Int?      @unique @map("legacy_id")
-  supplierId     Int?      @map("supplier_id")
+  legacyId         Int?      @unique @map("legacy_id")
+  supplierId       Int?      @map("supplier_id")
   // Which shelf this order is for, from INVENTORY_CATEGORIES. The clinic deals
   // with a different rep per product line at the same company (see
   // SupplierContact.categories), so a food order and a medication order go to
@@ -419,39 +424,49 @@ model PurchaseOrder {
   //
   // Nullable: an order created by hand need not commit to one shelf, and every
   // order that predates this column has none.
-  category       String?   @db.VarChar(100)
-  status         String    @default("Draft") @db.VarChar(20)
-  reference      String?   @db.VarChar(100)
-  orderedOn      DateTime? @map("ordered_on") @db.Date
+  category         String?   @db.VarChar(100)
+  status           String    @default("Draft") @db.VarChar(20)
+  reference        String?   @db.VarChar(100)
+  orderedOn        DateTime? @map("ordered_on") @db.Date
   // First delivery date. Stays set once any stock has arrived, even while the
   // order is still Partial and waiting on the rest.
-  receivedOn     DateTime? @map("received_on") @db.Date
+  receivedOn       DateTime? @map("received_on") @db.Date
   // The date the liability was recognised: when the order reached Received,
   // whether by the last delivery arriving or by being closed short. Distinct
   // from receivedOn, which marks the *first* delivery, so an order part
   // delivered in one period and completed in the next is billed in the right
   // one. Also the basis aging is measured from.
-  billedOn       DateTime? @map("billed_on") @db.Date
+  billedOn         DateTime? @map("billed_on") @db.Date
   // What the supplier adds to or takes off the bill. taxRate is stored per order
   // so a future change to the rate leaves historical orders alone. taxAmount is
   // computed from the rate but held on the row and editable, so a supplier's own
   // rounding wins over ours.
-  discountAmount Decimal?  @map("discount_amount") @db.Decimal(12, 2)
-  shippingAmount Decimal?  @map("shipping_amount") @db.Decimal(12, 2)
-  taxRate        Decimal?  @map("tax_rate") @db.Decimal(5, 2)
-  taxAmount      Decimal?  @map("tax_amount") @db.Decimal(12, 2)
-  notes          String?   @db.Text
-  createdBy      Int?      @map("created_by")
-  deletedAt      DateTime? @map("deleted_at") @db.Timestamptz(6)
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt      DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  discountAmount   Decimal?  @map("discount_amount") @db.Decimal(12, 2)
+  shippingAmount   Decimal?  @map("shipping_amount") @db.Decimal(12, 2)
+  taxRate          Decimal?  @map("tax_rate") @db.Decimal(5, 2)
+  taxAmount        Decimal?  @map("tax_amount") @db.Decimal(12, 2)
+  notes            String?   @db.Text
+  // The order this one was cut from. A short delivery can close its order at
+  // what arrived, so that delivery's bill can be paid on its own, and carry the
+  // rest here as a new Placed order at the same prices. Set only on the
+  // continuation; the original finds it through `splits`. SET NULL rather than
+  // cascade: the continuation is a real order with its own deliveries and bill,
+  // and must outlive the paperwork it started from.
+  splitFromOrderId Int?      @map("split_from_order_id")
+  createdBy        Int?      @map("created_by")
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
 
-  supplier Supplier?           @relation(fields: [supplierId], references: [supplierId], onDelete: Restrict)
-  creator  User?               @relation(fields: [createdBy], references: [userId], onDelete: SetNull)
-  lines    PurchaseOrderLine[]
-  payments SupplierPayment[]
+  supplier  Supplier?           @relation(fields: [supplierId], references: [supplierId], onDelete: Restrict)
+  creator   User?               @relation(fields: [createdBy], references: [userId], onDelete: SetNull)
+  splitFrom PurchaseOrder?      @relation("OrderSplits", fields: [splitFromOrderId], references: [orderId], onDelete: SetNull)
+  splits    PurchaseOrder[]     @relation("OrderSplits")
+  lines     PurchaseOrderLine[]
+  payments  SupplierPayment[]
 
   @@index([supplierId], map: "idx_purchase_orders_supplier")
+  @@index([splitFromOrderId], map: "idx_purchase_orders_split_from")
   @@index([status], map: "idx_purchase_orders_status")
   // The basket's draft lookup: one open draft per supplier per category.
   @@index([status, supplierId, category], map: "idx_purchase_orders_draft_bucket")
@@ -514,6 +529,12 @@ model InventoryItem {
   name             String    @db.VarChar(255)
   category         String?   @db.VarChar(100)
   barcode          String?   @unique @db.VarChar(100)
+  // The supplier's own product code, as printed on their price list and
+  // delivery notes. Carried onto purchase orders so the rep can match a line to
+  // their catalogue without translating our name for it. Not a barcode and
+  // never scanned: many items have no barcode at all and carry a clinic
+  // generated one instead, so this column is free text and not unique.
+  supplierCode     String?   @map("supplier_code") @db.VarChar(32)
   unit             String?   @db.VarChar(50)
   currentStock     Decimal   @default(0) @map("current_stock") @db.Decimal(10, 3)
   // Loose selling: a pack that gets broken open and sold by weight or volume

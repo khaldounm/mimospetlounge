@@ -20,7 +20,8 @@ import {
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import AddIcon from "@mui/icons-material/Add";
 import { apiRequest } from "@/utils/api-client";
-import { formatDate, formatMoney, toDateOnly } from "@/utils/format";
+import { formatMoney, toDateOnly } from "@/utils/format";
+import { payableOrderLabel } from "@/utils/payable-order";
 import type {
   PayableOrderOption,
   SupplierDTO,
@@ -32,7 +33,10 @@ interface Props {
   supplierId: number;
   supplierName: string;
   balance: string;
-  /** Received orders only: an open order has no bill to credit against yet. */
+  /**
+   * Received orders with something left to pay. An open order has no bill to
+   * credit against yet, and a settled one is not offered again.
+   */
   payableOrders: PayableOrderOption[];
   onClose: () => void;
   onSaved: (
@@ -108,8 +112,9 @@ function CreditForm({
         if (r.id !== id) return r;
         const next = { ...r, ...patch };
         // Picking a bill fills that row with whatever is still unallocated, or
-        // the order's total, whichever is smaller: crediting more against a bill
-        // than the bill is worth is the mistake this is here to avoid.
+        // what is still owed on the order, whichever is smaller: crediting more
+        // against a bill than is left on it is the mistake this is here to
+        // avoid.
         if (patch.orderId !== undefined && patch.orderId !== "") {
           const picked = payableOrders.find(
             (o) => String(o.orderId) === patch.orderId,
@@ -119,7 +124,9 @@ function CreditForm({
               .filter((o) => o.id !== id)
               .reduce((sum, o) => sum + (Number(o.amount) || 0), 0);
             const left = Math.max(total - others, 0);
-            next.amount = String(Math.min(Number(picked.total), left) || "");
+            next.amount = String(
+              Math.min(Number(picked.outstanding), left) || "",
+            );
           }
         }
         return next;
@@ -265,9 +272,7 @@ function CreditForm({
                     <MenuItem value="">The account</MenuItem>
                     {payableOrders.map((o) => (
                       <MenuItem key={o.orderId} value={String(o.orderId)}>
-                        {o.reference || `Order #${o.orderId}`} &middot;{" "}
-                        {formatMoney(o.total)}
-                        {o.receivedOn ? ` · ${formatDate(o.receivedOn)}` : ""}
+                        {payableOrderLabel(o)}
                       </MenuItem>
                     ))}
                   </TextField>

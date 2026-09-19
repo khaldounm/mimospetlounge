@@ -17,11 +17,12 @@ export async function POST(
     const orderId = parseId((await params).orderId, "order id");
     const data = await parseBody(request, receiveOrderSchema);
 
-    const order = await receiveOrder(
+    const { order, splitOrderId } = await receiveOrder(
       orderId,
       data.lines,
       session.user.userId,
       data.receivedOn,
+      { splitRemainder: data.splitRemainder },
     );
     await writeAudit(session, {
       action: "stock",
@@ -31,8 +32,23 @@ export async function POST(
         status: order.status,
         receivedOn: order.receivedOn,
         lines: data.lines.filter((l) => l.quantity > 0),
+        ...(splitOrderId != null ? { splitInto: splitOrderId } : {}),
       },
     });
-    return NextResponse.json({ order: await getOrderDetail(orderId) });
+    // The continuation is a new order, so it gets a creation entry of its own
+    // that says where it came from.
+    if (splitOrderId != null) {
+      await writeAudit(session, {
+        action: "create",
+        entity: "purchase_order",
+        entityId: splitOrderId,
+        changes: { splitFrom: orderId },
+      });
+    }
+    return NextResponse.json({
+      order: await getOrderDetail(orderId),
+      splitOrder:
+        splitOrderId != null ? await getOrderDetail(splitOrderId) : null,
+    });
   });
 }

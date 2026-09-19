@@ -98,6 +98,7 @@ function InventoryItemForm({
   );
   const [unit, setUnit] = useState(item?.unit ?? "");
   const [barcode, setBarcode] = useState(item?.barcode ?? "");
+  const [supplierCode, setSupplierCode] = useState(item?.supplierCode ?? "");
   const [reorderLevel, setReorderLevel] = useState(
     item ? String(item.reorderLevel) : "0",
   );
@@ -269,8 +270,9 @@ function InventoryItemForm({
         partnerCostPct,
         partnerProfitPct,
         // Omitted entirely for staff without purchasing access, so saving the
-        // form never clears a supplier they were not shown.
-        ...(canViewSuppliers ? { supplierId } : {}),
+        // form never clears a supplier, or a supplier code, they were not
+        // shown.
+        ...(canViewSuppliers ? { supplierId, supplierCode } : {}),
         expiryDate,
         tracksExpiry,
         // All three or none: the server and the database both reject a half
@@ -417,24 +419,39 @@ function InventoryItemForm({
               )}
             </Stack>
             {canViewSuppliers && (
-              <TextField
-                select
-                label="Usual supplier"
-                value={supplierId}
-                onChange={(e) => handleSupplierChange(e.target.value)}
-                helperText="Optional. Groups this item when reordering."
-                fullWidth
-              >
-                <MenuItem value="">Not assigned</MenuItem>
-                {suppliers.map((s) => (
-                  <MenuItem key={s.supplierId} value={String(s.supplierId)}>
-                    {s.name}
-                  </MenuItem>
-                ))}
-                {canCreateSuppliers && (
-                  <MenuItem value={ADD_SUPPLIER}>+ Add new supplier…</MenuItem>
-                )}
-              </TextField>
+              <Stack direction="row" spacing={2}>
+                <TextField
+                  select
+                  label="Usual supplier"
+                  value={supplierId}
+                  onChange={(e) => handleSupplierChange(e.target.value)}
+                  helperText="Optional. Groups this item when reordering."
+                  fullWidth
+                >
+                  <MenuItem value="">Not assigned</MenuItem>
+                  {suppliers.map((s) => (
+                    <MenuItem key={s.supplierId} value={String(s.supplierId)}>
+                      {s.name}
+                    </MenuItem>
+                  ))}
+                  {canCreateSuppliers && (
+                    <MenuItem value={ADD_SUPPLIER}>
+                      + Add new supplier…
+                    </MenuItem>
+                  )}
+                </TextField>
+                {/* The supplier's own code, beside the supplier it belongs
+                    to. Deliberately not next to the barcode: it looks like
+                    one and is not, and nothing scans it. */}
+                <TextField
+                  label="Supplier code"
+                  value={supplierCode}
+                  onChange={(e) => setSupplierCode(e.target.value)}
+                  slotProps={{ htmlInput: { maxLength: 32 } }}
+                  helperText="Their product code. Printed on orders, not scanned."
+                  fullWidth
+                />
+              </Stack>
             )}
             <Stack direction="row" spacing={2}>
               <TextField

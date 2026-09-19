@@ -56,6 +56,9 @@ const inventoryItemCreateFields = z.object({
   name: z.string().trim().min(1, "Name is required").max(255),
   category: optionalString(100),
   barcode: optionalString(100),
+  // The supplier's own product code. 4 to 12 characters in practice; 32 is the
+  // column. Not a barcode, so no format is imposed beyond the length.
+  supplierCode: optionalString(32),
   unit: optionalString(50),
   reorderLevel: z.coerce.number().int().nonnegative().max(1_000_000).default(0),
   salePrice: optionalMoney,

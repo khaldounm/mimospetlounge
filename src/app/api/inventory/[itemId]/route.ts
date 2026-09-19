@@ -81,6 +81,9 @@ export async function PATCH(
             ...(data.name !== undefined ? { name: data.name } : {}),
             ...(data.category !== undefined ? { category: data.category } : {}),
             ...(data.barcode !== undefined ? { barcode: data.barcode } : {}),
+            ...(data.supplierCode !== undefined
+              ? { supplierCode: data.supplierCode }
+              : {}),
             ...(data.unit !== undefined ? { unit: data.unit } : {}),
             ...(data.reorderLevel !== undefined
               ? { reorderLevel: data.reorderLevel }

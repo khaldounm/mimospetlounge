@@ -1,4 +1,6 @@
+import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
+import { ApiError } from "@/lib/api";
 import { computePartnerPayable, effectiveRates } from "@/lib/partners";
 import { BOOKING_STATUSES } from "@/types/enums";
 import {
@@ -15,6 +17,7 @@ import {
 import {
   AD_HOC_LABEL,
   CATEGORY_GROUPS,
+  CATEGORY_TOP_LIMIT,
   CLIENT_LIST_LIMIT,
   COUNTER_SALE_LEGACY_CLIENT_ID,
   GROOMING_SERVICE_CATEGORY,
@@ -26,11 +29,14 @@ import {
   type CategoryGroupKey,
 } from "@/constants/analytics";
 import type { AnalyticsSection, ClientListKind } from "@/schemas/analytics";
+import type { ComparisonMode } from "@/utils/date-range";
 import type {
   AnalyticsRange,
   BookingsAnalytics,
   CategoriesAnalytics,
   CategoryComparison,
+  CategoryTopLine,
+  CategoryTopLines,
   CategoryTrendGroup,
   CategoryTrendRow,
   ClientActivityRow,
@@ -712,6 +718,212 @@ async function getCategoriesSection(
   return {
     mom: compareCategories(momWindow, current, mom),
     yoy: compareCategories(yoyWindow, current, yoy),
+  };
+}
+
+// ---- what is behind one category ----
+
+// The invoice lines that classifyLine files under this group and label, as a
+// where clause, so the dialog reads exactly the lines the category row was
+// built from. Null for a pairing the classification could never produce
+// ("Grooming" under vet, say), which the route turns away.
+function categoryLineWhere(
+  group: CategoryGroupKey,
+  category: string,
+): Prisma.InvoiceLineItemWhereInput | null {
+  // A label of "Uncategorised" stands for a null category on the row.
+  const stored = category === UNCATEGORISED_LABEL ? null : category;
+  switch (group) {
+    case "products":
+      return { itemId: { not: null }, item: { is: { category: stored } } };
+    case "vet":
+      if (
+        category === GROOMING_SERVICE_CATEGORY ||
+        NON_TRADE_SERVICE_CATEGORIES.has(category)
+      ) {
+        return null;
+      }
+      return {
+        serviceId: { not: null },
+        service: { is: { category: stored } },
+      };
+    case "grooming":
+      if (category !== GROOMING_SERVICE_CATEGORY) return null;
+      return {
+        serviceId: { not: null },
+        service: { is: { category: stored } },
+      };
+    case "other":
+      if (category === AD_HOC_LABEL) return { itemId: null, serviceId: null };
+      if (!NON_TRADE_SERVICE_CATEGORIES.has(category)) return null;
+      return {
+        serviceId: { not: null },
+        service: { is: { category: stored } },
+      };
+  }
+}
+
+// What one line in a category is keyed and named by. Stock and services have
+// an id and a name; an ad-hoc line only has the text that was typed.
+type LineKind = "item" | "service" | "adhoc";
+
+/**
+ * The lines behind one category row: the best-billing items (or services, or
+ * ad-hoc texts) over the window, each against the comparison window, ranked on
+ * billed revenue net of returns, which is the figure the category row itself
+ * shows. Only fetched when a category is opened, so the section stays as
+ * light as it was.
+ *
+ * Grouped in SQL on the line's key, over only the lines that match the
+ * category, so a busy category over a year is one grouped query rather than
+ * every line of it in memory. The comparison is fetched only for the lines
+ * that made the list: a line that billed last year and not this year is not
+ * in the top of this year, which is what the list is.
+ */
+export async function getCategoryTopLines(
+  group: CategoryGroupKey,
+  category: string,
+  range: AnalyticsRange,
+  mode: ComparisonMode,
+): Promise<CategoryTopLines> {
+  const where = categoryLineWhere(group, category);
+  if (!where) {
+    throw new ApiError(400, "That category is not part of that business line");
+  }
+  const kind: LineKind =
+    group === "products"
+      ? "item"
+      : category === AD_HOC_LABEL
+        ? "adhoc"
+        : "service";
+  const by =
+    kind === "item"
+      ? (["itemId"] as const)
+      : kind === "service"
+        ? (["serviceId"] as const)
+        : (["description"] as const);
+
+  const priorWindow = priorRange(range, mode);
+  const current = rangeBounds(range);
+  const prior = rangeBounds(priorWindow);
+
+  // The key a grouped row is filed under, whichever column carried it.
+  const keyOf = (g: {
+    itemId?: number | null;
+    serviceId?: number | null;
+    description?: string;
+  }) => String(g.itemId ?? g.serviceId ?? g.description ?? "");
+
+  const lineWhere = (bounds: { from: Date; toExclusive: Date }) => ({
+    ...where,
+    // Clinic use, never billed. Same rule as the category totals.
+    isHidden: false,
+    invoice: tradedInvoiceFilter(bounds.from, bounds.toExclusive),
+  });
+
+  const [currentGroups, categoryTotals] = await Promise.all([
+    prisma.invoiceLineItem.groupBy({
+      by: [...by],
+      where: lineWhere(current),
+      _sum: { lineTotal: true, quantity: true },
+    }),
+    // The whole category in both windows, so the dialog can say what share of
+    // the row the list explains. Two sums rather than a re-read of the section.
+    Promise.all(
+      [current, prior].map((bounds) =>
+        prisma.invoiceLineItem.aggregate({
+          where: lineWhere(bounds),
+          _sum: { lineTotal: true },
+        }),
+      ),
+    ),
+  ]);
+
+  const ranked = currentGroups
+    .map((g) => ({
+      key: keyOf(g),
+      current: g._sum.lineTotal?.toNumber() ?? 0,
+      units: g._sum.quantity?.toNumber() ?? 0,
+    }))
+    .sort((a, b) => b.current - a.current)
+    .slice(0, CATEGORY_TOP_LIMIT);
+
+  if (ranked.length === 0) {
+    return {
+      group,
+      category,
+      priorRange: priorWindow,
+      total: toTrendRow(
+        category,
+        categoryTotals[0]._sum.lineTotal?.toNumber() ?? 0,
+        categoryTotals[1]._sum.lineTotal?.toNumber() ?? 0,
+      ),
+      lines: [],
+    };
+  }
+
+  const ids = ranked.map((r) => r.key);
+  const keyFilter: Prisma.InvoiceLineItemWhereInput =
+    kind === "item"
+      ? { itemId: { in: ids.map(Number) } }
+      : kind === "service"
+        ? { serviceId: { in: ids.map(Number) } }
+        : { description: { in: ids } };
+
+  const [priorGroups, names] = await Promise.all([
+    prisma.invoiceLineItem.groupBy({
+      by: [...by],
+      where: { ...lineWhere(prior), ...keyFilter },
+      _sum: { lineTotal: true },
+    }),
+    kind === "item"
+      ? prisma.inventoryItem.findMany({
+          where: { itemId: { in: ids.map(Number) } },
+          select: { itemId: true, name: true },
+        })
+      : kind === "service"
+        ? prisma.service.findMany({
+            where: { serviceId: { in: ids.map(Number) } },
+            select: { serviceId: true, name: true },
+          })
+        : Promise.resolve([]),
+  ]);
+
+  const priorByKey = new Map(
+    priorGroups.map((g) => [keyOf(g), g._sum.lineTotal?.toNumber() ?? 0]),
+  );
+  const nameByKey = new Map<string, string>(
+    names.map((n) =>
+      "itemId" in n
+        ? [String(n.itemId), n.name]
+        : [String(n.serviceId), n.name],
+    ),
+  );
+
+  const lines: CategoryTopLine[] = ranked.map((r) => ({
+    ...toTrendRow(
+      // A deleted item or retired service still sold, so it keeps its place
+      // under an honest placeholder rather than dropping out of the total.
+      kind === "adhoc"
+        ? r.key
+        : (nameByKey.get(r.key) ??
+            `${kind === "item" ? "Item" : "Service"} #${r.key}`),
+      r.current,
+      priorByKey.get(r.key) ?? 0,
+    ),
+    units: kind === "adhoc" ? null : Math.round(r.units * 1000) / 1000,
+  }));
+
+  return {
+    group,
+    category,
+    priorRange: priorWindow,
+    total: toTrendRow(
+      category,
+      categoryTotals[0]._sum.lineTotal?.toNumber() ?? 0,
+      categoryTotals[1]._sum.lineTotal?.toNumber() ?? 0,
+    ),
+    lines,
   };
 }
 

@@ -9,12 +9,15 @@ import {
   TableRow,
   Typography,
 } from "@mui/material";
+import { useState } from "react";
 import { BarChart } from "@mui/x-charts/BarChart";
-import { LineChart } from "@mui/x-charts/LineChart";
 import { useAnalyticsSection } from "@/hooks/useAnalyticsSection";
+import { DEFAULT_CHART_VIEW, type ChartView } from "@/constants/analytics";
 import { rangeSummary } from "@/utils/date-range";
 import DateRangeControl from "@/components/ui/DateRangeControl";
 import CollapsibleSection from "@/components/ui/CollapsibleSection";
+import ChartViewToggle from "./ChartViewToggle";
+import TrendChart from "./TrendChart";
 import {
   CHART_HEIGHT,
   ChartCard,
@@ -94,6 +97,9 @@ export default function RevenueSection({
 }) {
   const { range, data, loading, error, setRange, load } =
     useAnalyticsSection<RevenueAnalytics>("revenue", initialRange);
+  // Which picture the revenue trend draws. Local: every view is drawn from
+  // the data already on hand, so switching never refetches.
+  const [chartView, setChartView] = useState<ChartView>(DEFAULT_CHART_VIEW);
   const trendHasData = data?.trend.some(
     (t) => t.collected > 0 || t.outstanding > 0,
   );
@@ -119,28 +125,30 @@ export default function RevenueSection({
             <KpiCard label="Void rate" value={`${data.voidRate}%`} />
           </KpiGrid>
           <ChartGrid columns={3}>
-            <ChartCard title="Revenue trend" full>
+            <ChartCard
+              title="Revenue trend"
+              full
+              action={
+                <ChartViewToggle value={chartView} onChange={setChartView} />
+              }
+            >
               {trendHasData ? (
-                <LineChart
-                  height={CHART_HEIGHT}
-                  xAxis={[
-                    {
-                      data: data.trend.map((t) => t.label),
-                      scaleType: "point",
-                    },
-                  ]}
+                <TrendChart
+                  view={chartView}
+                  labels={data.trend.map((t) => t.label)}
                   series={[
                     {
-                      data: data.trend.map((t) => t.collected),
+                      id: "collected",
                       label: "Collected",
-                      valueFormatter: (v) => money(v),
+                      data: data.trend.map((t) => t.collected),
                     },
                     {
-                      data: data.trend.map((t) => t.outstanding),
+                      id: "outstanding",
                       label: "Outstanding",
-                      valueFormatter: (v) => money(v),
+                      data: data.trend.map((t) => t.outstanding),
                     },
                   ]}
+                  valueFormatter={(v) => money(v)}
                 />
               ) : (
                 <EmptyChart />

@@ -1,12 +1,15 @@
 "use client";
 
+import { useState } from "react";
 import { BarChart } from "@mui/x-charts/BarChart";
-import { LineChart } from "@mui/x-charts/LineChart";
 import { PieChart } from "@mui/x-charts/PieChart";
 import { useAnalyticsSection } from "@/hooks/useAnalyticsSection";
+import { DEFAULT_CHART_VIEW, type ChartView } from "@/constants/analytics";
 import { rangeSummary } from "@/utils/date-range";
 import DateRangeControl from "@/components/ui/DateRangeControl";
 import CollapsibleSection from "@/components/ui/CollapsibleSection";
+import ChartViewToggle from "./ChartViewToggle";
+import TrendChart from "./TrendChart";
 import {
   CHART_HEIGHT,
   ChartCard,
@@ -26,6 +29,9 @@ export default function BookingsSection({
 }) {
   const { range, data, loading, error, setRange, load } =
     useAnalyticsSection<BookingsAnalytics>("bookings", initialRange);
+  // Which picture the volume trend draws. Local: every view is drawn from the
+  // data already on hand, so switching never refetches.
+  const [chartView, setChartView] = useState<ChartView>(DEFAULT_CHART_VIEW);
 
   return (
     <CollapsibleSection
@@ -44,19 +50,21 @@ export default function BookingsSection({
             <KpiCard label="Cancelled" value={`${data.cancellationRate}%`} />
           </KpiGrid>
           <ChartGrid>
-            <ChartCard title="Booking volume" full>
-              <LineChart
-                height={CHART_HEIGHT}
-                xAxis={[
-                  {
-                    data: data.volumeTrend.map((t) => t.label),
-                    scaleType: "point",
-                  },
-                ]}
+            <ChartCard
+              title="Booking volume"
+              full
+              action={
+                <ChartViewToggle value={chartView} onChange={setChartView} />
+              }
+            >
+              <TrendChart
+                view={chartView}
+                labels={data.volumeTrend.map((t) => t.label)}
                 series={[
                   {
-                    data: data.volumeTrend.map((t) => t.count),
+                    id: "bookings",
                     label: "Bookings",
+                    data: data.volumeTrend.map((t) => t.count),
                   },
                 ]}
               />

@@ -205,7 +205,7 @@ export default function InventoryTable({
         sx={{ alignItems: { sm: "center" }, mb: 2 }}
       >
         <TextField
-          placeholder="Search by name, category, or barcode"
+          placeholder="Search by name, category, barcode or supplier code"
           value={query}
           onChange={(e) => changeFilter(() => setQuery(e.target.value))}
           fullWidth
@@ -356,6 +356,15 @@ export default function InventoryTable({
                       {it.supplierName ?? (
                         <Typography variant="body2" color="text.secondary">
                           Not assigned
+                        </Typography>
+                      )}
+                      {it.supplierCode && (
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: "block" }}
+                        >
+                          {it.supplierCode}
                         </Typography>
                       )}
                     </TableCell>

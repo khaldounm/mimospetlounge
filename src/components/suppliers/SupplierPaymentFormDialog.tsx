@@ -14,7 +14,8 @@ import {
   TextField,
 } from "@mui/material";
 import { apiRequest } from "@/utils/api-client";
-import { formatDate, formatMoney, toDateOnly } from "@/utils/format";
+import { formatMoney, toDateOnly } from "@/utils/format";
+import { payableOrderLabel } from "@/utils/payable-order";
 import { PARTNER_PAYOUT_METHODS } from "@/constants/partner";
 import type { PayableOrderOption, SupplierDTO } from "@/types/entities";
 
@@ -23,7 +24,10 @@ interface Props {
   supplierId: number;
   supplierName: string;
   balance: string;
-  /** Received orders only: an open order has no bill to settle yet. */
+  /**
+   * Received orders with something left to pay. An open order has no bill to
+   * settle yet, and a settled one is not offered again.
+   */
   payableOrders: PayableOrderOption[];
   onClose: () => void;
   onSaved: (supplier: SupplierDTO | null) => void;
@@ -61,12 +65,13 @@ function PaymentForm({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Picking a bill fills the amount with that order's total, since paying an
-  // invoice in full is the common case. Still editable for a part payment.
+  // Picking a bill fills the amount with what is still owed on it, since
+  // settling an invoice is the common case. On a bill nothing has been paid
+  // against that is its total. Still editable for a part payment.
   function handleOrderChange(value: string) {
     setOrderId(value);
     const picked = payableOrders.find((o) => String(o.orderId) === value);
-    if (picked) setAmount(picked.total);
+    if (picked) setAmount(picked.outstanding);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -108,17 +113,15 @@ function PaymentForm({
             onChange={(e) => handleOrderChange(e.target.value)}
             helperText={
               payableOrders.length === 0
-                ? "No delivered orders yet, so this will pay against the account"
-                : "Optional. Only delivered orders can be paid against."
+                ? "No delivered orders with anything left to pay, so this will pay against the account"
+                : "Optional. Only delivered orders with something left to pay are listed."
             }
             fullWidth
           >
             <MenuItem value="">Against the account (no specific bill)</MenuItem>
             {payableOrders.map((o) => (
               <MenuItem key={o.orderId} value={String(o.orderId)}>
-                {o.reference || `Order #${o.orderId}`} &middot;{" "}
-                {formatMoney(o.total)}
-                {o.receivedOn ? ` · ${formatDate(o.receivedOn)}` : ""}
+                {payableOrderLabel(o)}
               </MenuItem>
             ))}
           </TextField>

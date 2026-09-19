@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/api";
 import {
   DEFAULT_DISCOUNT_UNIT,
+  DEFAULT_VAT_RATE,
   OPEN_ORDER_STATUSES,
   type DiscountUnit,
   type OrderStatusFilter,
@@ -44,6 +45,15 @@ export function isReceivable(status: string): boolean {
 export const orderInclude = {
   supplier: { select: { name: true } },
   creator: { select: { firstName: true, lastName: true } },
+  // The two ends of a split, just enough to name and link them. An order is
+  // split at most once: it is Received afterwards and takes no more
+  // deliveries, so the first continuation is the only one.
+  splitFrom: { select: { orderId: true, reference: true } },
+  splits: {
+    select: { orderId: true, reference: true },
+    orderBy: { orderId: "asc" },
+    take: 1,
+  },
   lines: {
     orderBy: { lineId: "asc" },
     include: {
@@ -60,6 +70,9 @@ export const orderInclude = {
           // which line a scanned carton belongs to.
           tracksExpiry: true,
           barcode: true,
+          // Printed on the order so the rep reads their own code beside our
+          // name for the item.
+          supplierCode: true,
         },
       },
     },
@@ -108,6 +121,7 @@ export function toPurchaseOrderLineDTO(l: LineRow): PurchaseOrderLineDTO {
     looseUnit: l.looseUnit,
     tracksExpiry: l.item.tracksExpiry,
     barcode: l.item.barcode,
+    supplierCode: l.item.supplierCode,
     lineTotal: lineTotal.toFixed(2),
     notes: l.notes,
   };
@@ -158,6 +172,8 @@ export function toPurchaseOrderDTO(
       ? `${o.creator.firstName} ${o.creator.lastName}`
       : null,
     createdAt: o.createdAt.toISOString(),
+    splitFrom: o.splitFrom,
+    continuedIn: o.splits[0] ?? null,
   };
   if (options.withLines) dto.lines = o.lines.map(toPurchaseOrderLineDTO);
   return dto;
@@ -565,6 +581,13 @@ async function originReceiptMovement(
   return movement?.transactionId ?? null;
 }
 
+export interface ReceiveOrderResult {
+  order: { status: string; receivedOn: Date | null };
+  // The order the rest was moved to, when the delivery was short and the
+  // caller asked for it. Null otherwise.
+  splitOrderId: number | null;
+}
+
 export async function receiveOrder(
   orderId: number,
   received: {
@@ -582,7 +605,13 @@ export async function receiveOrder(
   }[],
   performedBy: number | null,
   receivedOn?: Date,
-) {
+  options: {
+    // When the delivery is short, close this order at what arrived and move
+    // the rest to a new order (see splitRemainderTx). Ignored on a complete
+    // delivery, where there is nothing to move.
+    splitRemainder?: boolean;
+  } = {},
+): Promise<ReceiveOrderResult> {
   const order = await prisma.purchaseOrder.findFirst({
     where: { orderId, deletedAt: null },
     include: {
@@ -794,14 +823,27 @@ export async function receiveOrder(
         l.quantityReceived.abs().greaterThanOrEqualTo(l.quantityOrdered.abs()),
       );
 
-      return tx.purchaseOrder.update({
+      // A short delivery the clinic wants billed on its own: the order closes
+      // at what arrived, in this same transaction, and the rest goes to a new
+      // order. The split settles the status itself, so the update below leaves
+      // it alone in that case.
+      const splitOrderId =
+        !complete && options.splitRemainder
+          ? await splitRemainderTx(tx, orderId, performedBy, when)
+          : null;
+
+      const updated = await tx.purchaseOrder.update({
         where: { orderId },
         data: {
-          status: complete ? "Received" : "Partial",
-          // Stamped only on the delivery that completes the order, so the
-          // liability lands in the period it was actually recognised rather than
-          // the period the first box arrived in.
-          ...(complete ? { billedOn: when } : {}),
+          ...(splitOrderId == null
+            ? {
+                status: complete ? "Received" : "Partial",
+                // Stamped only on the delivery that completes the order, so
+                // the liability lands in the period it was actually recognised
+                // rather than the period the first box arrived in.
+                ...(complete ? { billedOn: when } : {}),
+              }
+            : {}),
           // First delivery stamps the date and later ones leave it, so this
           // reads as "when stock started arriving".
           ...(order.receivedOn ? {} : { receivedOn: when }),
@@ -809,11 +851,213 @@ export async function receiveOrder(
           // every delivered order carries both dates.
           ...(order.orderedOn ? {} : { orderedOn: when }),
         },
+        select: { status: true, receivedOn: true },
       });
+      return { order: updated, splitOrderId };
     });
   } catch (err) {
     rethrowStockMovementError(err);
   }
+}
+
+// ---- Splitting a short delivery off its order ----
+
+// A loose record scaled to part of its line: 200 kg ordered as 10 bags, of
+// which 4 bags arrived, is 80 kg. Three decimals, matching the column.
+function scaleLoose(
+  looseQty: Prisma.Decimal | null,
+  part: Prisma.Decimal,
+  whole: Prisma.Decimal,
+): Prisma.Decimal | null {
+  if (looseQty == null || whole.isZero()) return null;
+  return looseQty.times(part).dividedBy(whole).toDecimalPlaces(3);
+}
+
+/**
+ * Closes an order at what has arrived and moves everything still outstanding
+ * to a new Placed order, linked back to this one.
+ *
+ * The clinic is billed per delivery, not per order: an order for 20 that turns
+ * up as 5, 5, 5 and 5 comes with four invoices, and each has to be payable on
+ * its own. Left Partial, the order is not a bill at all (the supplier balance
+ * only counts Received orders) and the first delivery cannot be paid against
+ * until the last one has landed. Splitting turns each delivery into its own
+ * bill: this order keeps exactly what arrived, at the cost it arrived at, and
+ * becomes Received, which is what makes it payable at the value delivered.
+ *
+ * Lines: one partly delivered is cut to what came, keeping its cost (already
+ * blended across the deliveries that actually landed on it, so quantity times
+ * cost is what those deliveries were worth); one nothing came of moves whole.
+ * Every moved line carries its price to the new order, which is Placed since
+ * the supplier already holds the order for it, and still editable there.
+ *
+ * Charges: a discount is shared pro rata by goods value, delivery stays with
+ * the delivery that happened, and where a VAT amount was set it is worked out
+ * again at the order's rate on each side. The old amount was for the whole
+ * order, so keeping it would tax goods that have not arrived. The new order is
+ * editable, so its charges can be corrected against the bill when it comes.
+ *
+ * A return document (negative lines) is refused: it is one instruction to the
+ * supplier, and closing it "at what went back" has no bill behind it.
+ *
+ * Runs inside the caller's transaction so a receipt and its split land, or
+ * fail, together. Returns the new order's id.
+ */
+export async function splitRemainderTx(
+  tx: Prisma.TransactionClient,
+  orderId: number,
+  performedBy: number | null,
+  when: Date,
+): Promise<number> {
+  const order = await tx.purchaseOrder.findFirst({
+    where: { orderId, deletedAt: null },
+    include: { lines: { orderBy: { lineId: "asc" } } },
+  });
+  if (!order) throw new ApiError(404, "Purchase order not found");
+  if (order.lines.some((l) => l.quantityOrdered.isNegative())) {
+    throw new ApiError(
+      409,
+      "A return document cannot be split. Receive what is going back, or close it short.",
+    );
+  }
+
+  const moving = order.lines.filter((l) =>
+    l.quantityOrdered.greaterThan(l.quantityReceived),
+  );
+  if (moving.length === 0) {
+    throw new ApiError(
+      409,
+      "Everything on this order has arrived, so there is nothing to move.",
+    );
+  }
+  if (!order.lines.some((l) => l.quantityReceived.greaterThan(0))) {
+    throw new ApiError(
+      409,
+      "Nothing has arrived on this order yet, so there is nothing to close it at. Receive a delivery first.",
+    );
+  }
+
+  // Goods value on each side at the line costs, which is what the discount is
+  // shared by. Lines with no cost yet weigh nothing on either side.
+  let kept = D(0);
+  let moved = D(0);
+  for (const l of order.lines) {
+    if (l.unitCost == null) continue;
+    kept = kept.plus(l.quantityReceived.times(l.unitCost));
+    moved = moved.plus(
+      l.quantityOrdered.minus(l.quantityReceived).times(l.unitCost),
+    );
+  }
+  const goods = kept.plus(moved);
+  const keptShare = goods.greaterThan(0) ? kept.dividedBy(goods) : D(1);
+
+  // Zero is "none" for both charges, the same way the DTO reads them, so an
+  // order with no VAT does not acquire some on the way through here.
+  const discount = order.discountAmount?.greaterThan(0)
+    ? order.discountAmount
+    : null;
+  const keptDiscount = discount
+    ? discount.times(keptShare).toDecimalPlaces(2)
+    : null;
+  const movedDiscount =
+    discount && keptDiscount ? discount.minus(keptDiscount) : null;
+
+  const taxed = order.taxAmount?.greaterThan(0) ?? false;
+  const rate = order.taxRate ?? D(DEFAULT_VAT_RATE);
+  const vatOn = (base: Prisma.Decimal) =>
+    base.times(rate).dividedBy(100).toDecimalPlaces(2);
+  const keptTax = taxed
+    ? vatOn(kept.minus(keptDiscount ?? 0).plus(order.shippingAmount ?? 0))
+    : order.taxAmount;
+  const movedTax = taxed ? vatOn(moved.minus(movedDiscount ?? 0)) : null;
+
+  const created = await tx.purchaseOrder.create({
+    data: {
+      supplierId: order.supplierId,
+      category: order.category,
+      // The supplier already holds the order for these goods, so the new sheet
+      // starts where the old one was, not as a draft nobody has sent.
+      status: "Placed",
+      orderedOn: order.orderedOn ?? when,
+      taxRate: order.taxRate,
+      discountAmount: movedDiscount?.greaterThan(0) ? movedDiscount : null,
+      taxAmount: movedTax?.greaterThan(0) ? movedTax : null,
+      splitFromOrderId: orderId,
+      createdBy: performedBy,
+      lines: {
+        create: moving.map((l) => {
+          const remainder = l.quantityOrdered.minus(l.quantityReceived);
+          return {
+            itemId: l.itemId,
+            quantityOrdered: remainder,
+            unitCost: l.unitCost,
+            looseQty: scaleLoose(l.looseQty, remainder, l.quantityOrdered),
+            looseUnit: l.looseUnit,
+            notes: l.notes,
+          };
+        }),
+      },
+    },
+    select: { orderId: true },
+  });
+
+  for (const l of moving) {
+    if (l.quantityReceived.isZero()) {
+      // A line with nothing delivered leaves whole. Nothing references it: a
+      // batch or a return points at a line that delivered something.
+      await tx.purchaseOrderLine.delete({ where: { lineId: l.lineId } });
+    } else {
+      await tx.purchaseOrderLine.update({
+        where: { lineId: l.lineId },
+        data: {
+          quantityOrdered: l.quantityReceived,
+          looseQty: scaleLoose(
+            l.looseQty,
+            l.quantityReceived,
+            l.quantityOrdered,
+          ),
+        },
+      });
+    }
+  }
+
+  await tx.purchaseOrder.update({
+    where: { orderId },
+    data: {
+      // Closing at what arrived is the moment this delivery's bill is
+      // recognised, the same as a final delivery or a close-short.
+      status: "Received",
+      billedOn: when,
+      discountAmount: keptDiscount,
+      taxAmount: keptTax,
+    },
+  });
+
+  return created.orderId;
+}
+
+// Partial -> Received, with the rest moved to a new order. The same split a
+// receipt can ask for, offered on its own for an order that was already left
+// Partial before the choice existed, or where the decision came later.
+export async function splitOrder(
+  orderId: number,
+  performedBy: number | null,
+  splitOn?: Date,
+): Promise<number> {
+  const order = await prisma.purchaseOrder.findFirst({
+    where: { orderId, deletedAt: null },
+    select: { status: true },
+  });
+  if (!order) throw new ApiError(404, "Purchase order not found");
+  if (order.status !== "Partial") {
+    throw new ApiError(
+      409,
+      "Only a part-delivered order can be split. Receive a delivery first and choose to move the rest as you do.",
+    );
+  }
+  return prisma.$transaction((tx) =>
+    splitRemainderTx(tx, orderId, performedBy, splitOn ?? new Date()),
+  );
 }
 
 // Partial -> Received, for the delivery that is never going to be completed.

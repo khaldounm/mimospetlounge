@@ -17,10 +17,12 @@ import {
   Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import CakeIcon from "@mui/icons-material/Cake";
 import { apiRequest } from "@/utils/api-client";
 import AlphabetBar from "@/components/ui/AlphabetBar";
 import TablePaginationBar from "@/components/ui/TablePaginationBar";
 import type { PatientDTO } from "@/types/entities";
+import BirthdaysDialog from "./BirthdaysDialog";
 import PatientFormDialog from "./PatientFormDialog";
 import ReviewBadge from "@/components/ui/ReviewBadge";
 import ReviewFilterChip from "@/components/ui/ReviewFilterChip";
@@ -51,6 +53,8 @@ export default function PatientsTable({
   const [reviewCount, setReviewCount] = useState(initialReviewCount);
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  // Fetched only when opened: the list is a purpose, not a page decoration.
+  const [birthdaysOpen, setBirthdaysOpen] = useState(false);
   const firstRender = useRef(true);
 
   async function load(q: string, l: string | null, p: number, review: boolean) {
@@ -97,6 +101,13 @@ export default function PatientsTable({
       >
         <Typography variant="h4">Patients</Typography>
         <Stack direction="row" spacing={1}>
+          <Button
+            variant="outlined"
+            startIcon={<CakeIcon />}
+            onClick={() => setBirthdaysOpen(true)}
+          >
+            Birthdays this week
+          </Button>
           <Button component={Link} href="/clients" variant="outlined">
             Clients
           </Button>
@@ -193,6 +204,11 @@ export default function PatientsTable({
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         onSaved={() => void load(query, letter, page, reviewOnly)}
+      />
+      <BirthdaysDialog
+        open={birthdaysOpen}
+        canWrite={canWrite}
+        onClose={() => setBirthdaysOpen(false)}
       />
     </Box>
   );

@@ -25,5 +25,11 @@ export const patientUpdateSchema = patientCreateSchema
     message: "No fields to update",
   });
 
+// Ticking a pet off the upcoming-birthdays list, or undoing that. A strict
+// boolean: coercion would read "false" as true.
+export const birthdaySeenSchema = z.object({
+  seen: z.boolean(),
+});
+
 export type PatientCreateInput = z.infer<typeof patientCreateSchema>;
 export type PatientUpdateInput = z.infer<typeof patientUpdateSchema>;

@@ -32,6 +32,10 @@ export const CATEGORY_GROUPS = [
 
 export type CategoryGroupKey = (typeof CATEGORY_GROUPS)[number]["key"];
 
+// How many lines the "what is behind this category" dialog shows. Fetched only
+// when a category is opened, so the section itself stays as light as it was.
+export const CATEGORY_TOP_LIMIT = 15;
+
 // ---- Services ----
 
 // How many bars the "Top services by revenue" chart shows. The chart is the
@@ -69,3 +73,37 @@ export const CLIENTS_DEFAULT_PRESET_ID = "last-12-months";
 // nothing new lands here. Keyed on the legacy id because that is what the import
 // set and what will not change; drop this to have it counted like anyone else.
 export const COUNTER_SALE_LEGACY_CLIENT_ID = 1;
+
+// ---- Trend charts ----
+
+// The pictures a trend chart can draw, switched on its card. "bars" is one
+// bar per bucket (side by side when there are several series); "stacked" is
+// the series piled into one area so the top edge is their total; "lines" is
+// the line chart every trend opened with.
+export const CHART_VIEWS = [
+  { key: "bars", label: "Bars" },
+  { key: "stacked", label: "Stacked" },
+  { key: "lines", label: "Lines" },
+] as const;
+
+export type ChartView = (typeof CHART_VIEWS)[number]["key"];
+
+export const DEFAULT_CHART_VIEW: ChartView = "stacked";
+
+// Colours for the stacked areas, by series order. A translucent wash that
+// fades to nothing under a 2px line in the same colour, so the bands read as
+// glass rather than paint; the exact opacities are in StackedAreaChart.
+//
+// Two selections of the same hues: deeper on the cream page, where a pastel
+// line would fade into the paper, pastel on the near-black one, where the
+// deep step would sink. Adjacent pairs were checked with the dataviz palette
+// validator against this app's surfaces: every pair clears the normal-vision
+// floor and 3:1 contrast in both modes; the warm slot beside green sits in
+// the colour-blind 6-8 band, which is allowed here because every band also
+// has its own line, its legend entry and its tooltip row. The dark steps are
+// brighter than the validator's lightness band on purpose: that is what
+// pastel on dark is.
+export const AREA_COLORS = {
+  light: ["#0d9488", "#7c3aed", "#db2777", "#16a34a"],
+  dark: ["#2dd4bf", "#a78bfa", "#f472b6", "#4ade80"],
+} as const;

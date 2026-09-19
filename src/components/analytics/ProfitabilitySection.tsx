@@ -1,13 +1,15 @@
 "use client";
 
+import { useState } from "react";
 import { Typography } from "@mui/material";
-import { LineChart } from "@mui/x-charts/LineChart";
 import { useAnalyticsSection } from "@/hooks/useAnalyticsSection";
+import { DEFAULT_CHART_VIEW, type ChartView } from "@/constants/analytics";
 import { rangeSummary } from "@/utils/date-range";
 import DateRangeControl from "@/components/ui/DateRangeControl";
 import CollapsibleSection from "@/components/ui/CollapsibleSection";
+import ChartViewToggle from "./ChartViewToggle";
+import ProfitBreakdownChart from "./ProfitBreakdownChart";
 import {
-  CHART_HEIGHT,
   ChartCard,
   ChartGrid,
   EmptyChart,
@@ -29,6 +31,9 @@ export default function ProfitabilitySection({
   const trendHasData = data?.trend.some(
     (t) => t.revenue > 0 || t.cogs > 0 || t.partnerCost > 0 || t.costs > 0,
   );
+  // Which picture the breakdown draws. A local choice: both views are drawn
+  // from the same data already on hand, so switching never refetches.
+  const [chartView, setChartView] = useState<ChartView>(DEFAULT_CHART_VIEW);
 
   return (
     <CollapsibleSection
@@ -90,44 +95,15 @@ export default function ProfitabilitySection({
             </>
           )}
           <ChartGrid>
-            <ChartCard title="Profit breakdown" full>
+            <ChartCard
+              title="Profit breakdown"
+              full
+              action={
+                <ChartViewToggle value={chartView} onChange={setChartView} />
+              }
+            >
               {trendHasData ? (
-                <LineChart
-                  height={CHART_HEIGHT}
-                  xAxis={[
-                    {
-                      data: data.trend.map((t) => t.label),
-                      scaleType: "point",
-                    },
-                  ]}
-                  series={[
-                    {
-                      data: data.trend.map((t) => t.revenue),
-                      label: "Revenue",
-                      valueFormatter: (v) => money(v),
-                    },
-                    {
-                      data: data.trend.map((t) => t.cogs),
-                      label: "COGS",
-                      valueFormatter: (v) => money(v),
-                    },
-                    {
-                      data: data.trend.map((t) => t.partnerCost),
-                      label: "Partner earnings",
-                      valueFormatter: (v) => money(v),
-                    },
-                    {
-                      data: data.trend.map((t) => t.costs),
-                      label: "Operating costs",
-                      valueFormatter: (v) => money(v),
-                    },
-                    {
-                      data: data.trend.map((t) => t.profit),
-                      label: "Net profit",
-                      valueFormatter: (v) => money(v),
-                    },
-                  ]}
-                />
+                <ProfitBreakdownChart trend={data.trend} view={chartView} />
               ) : (
                 <EmptyChart />
               )}

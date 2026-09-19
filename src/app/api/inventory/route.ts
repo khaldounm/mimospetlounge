@@ -54,6 +54,7 @@ export async function POST(request: Request) {
             name: data.name,
             category: data.category,
             barcode: data.barcode,
+            supplierCode: data.supplierCode,
             unit: data.unit,
             reorderLevel: data.reorderLevel,
             salePrice: data.salePrice,

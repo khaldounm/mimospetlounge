@@ -18,6 +18,7 @@ type ItemRow = {
   name: string;
   category: string | null;
   barcode: string | null;
+  supplierCode: string | null;
   unit: string | null;
   currentStock: Prisma.Decimal;
   reorderLevel: number;
@@ -105,6 +106,7 @@ export function toInventoryItemDTO(
     name: i.name,
     category: i.category,
     barcode: i.barcode,
+    supplierCode: i.supplierCode,
     unit: i.unit,
     currentStock,
     reorderLevel: i.reorderLevel,
@@ -597,6 +599,9 @@ function inventoryWhere(
             { name: { contains: q, mode: "insensitive" as const } },
             { category: { contains: q, mode: "insensitive" as const } },
             { barcode: { contains: q, mode: "insensitive" as const } },
+            // Typed off a supplier's price list or delivery note. Text search
+            // only: the scan paths look at barcode alone and stay that way.
+            { supplierCode: { contains: q, mode: "insensitive" as const } },
           ],
         }
       : {}),

@@ -208,6 +208,11 @@ export default function InventoryDetail({
               <Field label="Usual supplier" value={item.supplierName} />
             </Grid>
           )}
+          {canViewSuppliers && item.supplierCode && (
+            <Grid size={{ xs: 6, sm: 3 }}>
+              <Field label="Supplier code" value={item.supplierCode} />
+            </Grid>
+          )}
           {item.partnerName && (
             <Grid size={{ xs: 6, sm: 3 }}>
               <Field label="Sourced from" value={item.partnerName} />

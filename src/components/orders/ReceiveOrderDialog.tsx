@@ -10,7 +10,10 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
+  FormControlLabel,
   InputAdornment,
+  Radio,
+  RadioGroup,
   Stack,
   Table,
   TableBody,
@@ -48,7 +51,11 @@ interface Props {
   open: boolean;
   order: PurchaseOrderDTO;
   onClose: () => void;
-  onReceived: (order: PurchaseOrderDTO) => void;
+  /**
+   * The order after the receipt, and the order the rest was moved to when the
+   * delivery was short and the split was chosen. Null otherwise.
+   */
+  onReceived: (order: PurchaseOrderDTO, split: PurchaseOrderDTO | null) => void;
   /**
    * The order after a line was added from in here, which happens the moment the
    * item is put on the delivery rather than when the delivery is submitted.
@@ -243,6 +250,11 @@ function ReceiveForm({
   const [receivedOn, setReceivedOn] = useState(
     () => toDateOnly(new Date()) ?? "",
   );
+  // What becomes of a short delivery's remainder. "keep" is what always
+  // happened: the order stays Partial and takes the rest later. "split" closes
+  // it at what arrived, so this delivery's bill can be paid on its own, and
+  // moves the rest to a new order. Only asked when the delivery IS short.
+  const [remainder, setRemainder] = useState<"keep" | "split">("keep");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -257,7 +269,10 @@ function ReceiveForm({
       : outstanding.filter(
           (l) =>
             l.itemName.toLowerCase().includes(query) ||
-            (l.barcode ?? "").toLowerCase().includes(query),
+            (l.barcode ?? "").toLowerCase().includes(query) ||
+            // The delivery note is written in the supplier's codes, so typing
+            // one finds the line the same way the name does.
+            (l.supplierCode ?? "").toLowerCase().includes(query),
         );
   const hiddenCount = outstanding.length - visible.length;
 
@@ -266,6 +281,10 @@ function ReceiveForm({
     (l) => Number(quantities[l.lineId]) < Number(l.quantityOutstanding),
   );
   const partial = short || entered.length < outstanding.length;
+  // A return document (negative lines) is one instruction to the supplier and
+  // cannot be split, so it keeps the plain notice and never sends the flag.
+  const isReturn = outstanding.some((l) => Number(l.quantityOrdered) < 0);
+  const offerSplit = partial && entered.length > 0 && !isReturn;
 
   // A line raised in kilos is received in kilos. The pack size is recoverable
   // from the line itself (200 kg ordered as 10 bags means 20 per bag), so
@@ -377,10 +396,20 @@ function ReceiveForm({
   // say so before it happens rather than letting the balance shift silently.
   // Compared on the NET, since that is the figure that will move the balance.
   // Taking a discount is itself a repricing and should say so.
-  const repriced = entered.filter(
-    (l) =>
-      !missingCost(l) && l.unitCost != null && netOf(l) !== Number(l.unitCost),
-  );
+  //
+  // A loose line is typed and netted per loose unit while the line stores a
+  // per-pack cost, so the stored figure is brought down to the same unit
+  // first. Comparing $2 a kilo with $40 a bag flagged every loose line as
+  // repriced the moment the dialog opened.
+  const repriced = entered.filter((l) => {
+    if (missingCost(l) || l.unitCost == null) return false;
+    const loose = looseOf(l);
+    const orderedUnit = loose
+      ? Number(l.unitCost) / loose.perUnit
+      : Number(l.unitCost);
+    const net = netOf(l);
+    return net != null && Math.abs(net - orderedUnit) >= 0.005;
+  });
 
   // Enter, or the carriage return a scanner sends after the code, resolves
   // whatever is in the box as a barcode. Most of what arrives at goods receipt
@@ -535,11 +564,21 @@ function ReceiveForm({
 
     setSaving(true);
     try {
-      const res = await apiRequest<{ order: PurchaseOrderDTO }>(
-        `/api/orders/${order.orderId}/receive`,
-        { method: "POST", body: { lines, receivedOn } },
-      );
-      onReceived(res.order);
+      const res = await apiRequest<{
+        order: PurchaseOrderDTO;
+        splitOrder: PurchaseOrderDTO | null;
+      }>(`/api/orders/${order.orderId}/receive`, {
+        method: "POST",
+        body: {
+          lines,
+          receivedOn,
+          // Only ever true for a short delivery on a plain order; the server
+          // ignores it on a complete one anyway, so a stale choice cannot
+          // split a full order.
+          splitRemainder: offerSplit && remainder === "split",
+        },
+      });
+      onReceived(res.order, res.splitOrder);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to receive");
@@ -555,8 +594,8 @@ function ReceiveForm({
         <DialogContent>
           <DialogContentText sx={{ mb: 2 }}>
             Enter what actually turned up, and the cost the supplier invoiced.
-            Anything left short stays outstanding, and you can receive against
-            this order again when the rest arrives.
+            If the delivery is short you choose below whether the order waits
+            for the rest or is closed at what arrived, ready to pay.
           </DialogContentText>
 
           {error && (
@@ -710,7 +749,9 @@ function ReceiveForm({
                               caption={
                                 loose
                                   ? `ordered by the ${loose.unit}`
-                                  : undefined
+                                  : l.supplierCode
+                                    ? `Code ${l.supplierCode}`
+                                    : undefined
                               }
                             >
                               <Box>
@@ -1102,10 +1143,49 @@ function ReceiveForm({
               </Alert>
             )}
 
-            {partial && entered.length > 0 && (
+            {partial && entered.length > 0 && !offerSplit && (
               <Alert severity="info">
                 This is a part delivery. The order stays open at Partial with
                 the shortfall still outstanding.
+              </Alert>
+            )}
+
+            {offerSplit && (
+              <Alert severity="info">
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  This is a part delivery. What happens to the rest?
+                </Typography>
+                <RadioGroup
+                  value={remainder}
+                  onChange={(e) =>
+                    setRemainder(e.target.value as "keep" | "split")
+                  }
+                  sx={{ mt: 0.5 }}
+                >
+                  <FormControlLabel
+                    value="keep"
+                    control={<Radio size="small" />}
+                    label="Keep this order open. It stays Partial and takes the rest when it arrives."
+                    slotProps={{ typography: { variant: "body2" } }}
+                  />
+                  <FormControlLabel
+                    value="split"
+                    control={<Radio size="small" />}
+                    label="Close this order at what arrived, so this delivery can be paid, and move the rest to a new order at the same prices."
+                    slotProps={{ typography: { variant: "body2" } }}
+                  />
+                </RadioGroup>
+                {remainder === "split" && (
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: "block", mt: 0.5 }}
+                  >
+                    Any discount is shared by goods value, delivery stays on
+                    this order, and VAT is worked out again at the order&apos;s
+                    rate on each side. The new order is still editable.
+                  </Typography>
+                )}
               </Alert>
             )}
           </Stack>
@@ -1124,7 +1204,11 @@ function ReceiveForm({
               anyBadDiscount
             }
           >
-            {saving ? "Receiving…" : "Receive"}
+            {saving
+              ? "Receiving…"
+              : offerSplit && remainder === "split"
+                ? "Receive and split the rest"
+                : "Receive"}
           </Button>
         </DialogActions>
       </form>

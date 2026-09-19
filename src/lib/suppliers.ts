@@ -580,45 +580,111 @@ type PayableRow = {
   reference: string | null;
   received_on: Date | null;
   total: Prisma.Decimal;
+  outstanding: Prisma.Decimal;
 };
 
-// Received orders, for the "which bill is this settling?" picker on the payment
-// and credit forms. Open orders are excluded: there is no bill to pay yet.
+// The bills still open on a supplier's account, for the "which bill is this
+// settling?" picker on the payment and credit forms. An open order is not a
+// bill yet and is not offered; a bill that is paid off is not offered again.
 //
-// Every payable order, not a page: the picker has to be able to offer any bill
-// the clinic might be settling. What is bounded instead is the row. Each option
-// is four fields with its total summed in SQL, where this used to hand the
-// pickers a full purchase order document, lines and item details included, for
-// every delivery the supplier ever made.
+// "Paid off" is worked out the way a statement of open items is, not by the
+// order link alone. The clinic settles most accounts with a lump sum against
+// the account rather than bill by bill, so nearly every delivered order had
+// nothing linked to it and the picker offered four years of settled paperwork
+// (Envetra: 186 bills for a balance of two). What is put against a bill by
+// name comes off that bill first; everything else on the account (payments
+// and credit notes with no order, less the opening balance, plus any return
+// document, which is money the supplier owes back) is washed against the
+// remaining bills oldest first. What that leaves on a bill is what it is
+// offered at, so the amount prefilled is the one that closes it rather than
+// the one that pays it twice. Summed over every bill, that is exactly the
+// balance the supplier page shows, or the whole of it that bills explain when
+// an opening balance is still uncovered.
+//
+// Every open bill, not a page: the picker has to be able to offer any bill the
+// clinic might be settling. Each option is a handful of fields with its total
+// and what is left summed in SQL, where this used to hand the pickers a full
+// purchase order document, lines and item details included.
 export async function getPayableOrders(
   supplierId: number,
 ): Promise<PayableOrderOption[]> {
   const rows = await prisma.$queryRaw<PayableRow[]>`
-    SELECT o.order_id, o.reference, o.received_on,
-           ROUND(
-             COALESCE(l.subtotal, 0)
-             - COALESCE(o.discount_amount, 0)
-             + COALESCE(o.shipping_amount, 0)
-             + COALESCE(o.tax_amount, 0)
-           , 2) AS total
-    FROM purchase_orders o
-    LEFT JOIN LATERAL (
-      SELECT SUM(quantity_ordered * unit_cost) AS subtotal
-      FROM purchase_order_lines
-      WHERE order_id = o.order_id
-    ) l ON TRUE
-    WHERE o.supplier_id = ${supplierId}
-      AND o.deleted_at IS NULL
-      AND o.status = ${INVOICED_STATUS}
+    WITH bills AS (
+      SELECT o.order_id, o.reference, o.received_on,
+             -- The date the liability was recognised, which is the order the
+             -- account is settled in. Every delivered order carries one, but
+             -- received_on is the fallback that keeps a stray row in sequence.
+             COALESCE(o.billed_on, o.received_on, o.created_at::date) AS billed_on,
+             ROUND(
+               COALESCE(l.subtotal, 0)
+               - COALESCE(o.discount_amount, 0)
+               + COALESCE(o.shipping_amount, 0)
+               + COALESCE(o.tax_amount, 0)
+             , 2) AS total,
+             -- Payments and credit notes both settle a bill, so both count.
+             COALESCE(p.paid, 0) AS paid
+      FROM purchase_orders o
+      LEFT JOIN LATERAL (
+        SELECT SUM(quantity_ordered * unit_cost) AS subtotal
+        FROM purchase_order_lines
+        WHERE order_id = o.order_id
+      ) l ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT SUM(amount) AS paid
+        FROM supplier_payments
+        WHERE order_id = o.order_id AND deleted_at IS NULL
+      ) p ON TRUE
+      WHERE o.supplier_id = ${supplierId}
+        AND o.deleted_at IS NULL
+        AND o.status = ${INVOICED_STATUS}
+    ),
+    -- What is on the account without a bill's name on it, as money available
+    -- to wash the open bills: settlements against the account, less the
+    -- opening balance they cover first, plus anything the bills themselves
+    -- net back (a return document, or a bill paid past its total).
+    pool AS (
+      SELECT
+        COALESCE((
+          SELECT SUM(amount) FROM supplier_payments
+          WHERE supplier_id = ${supplierId}
+            AND order_id IS NULL AND deleted_at IS NULL
+        ), 0)
+        - COALESCE((
+          SELECT SUM(amount) FROM opening_balances
+          WHERE supplier_id = ${supplierId}
+        ), 0)
+        + COALESCE((
+          SELECT SUM(paid - total) FROM bills WHERE total - paid <= 0
+        ), 0) AS available
+    ),
+    open_bills AS (
+      SELECT b.order_id, b.reference, b.received_on, b.total,
+             b.total - b.paid AS due,
+             SUM(b.total - b.paid) OVER (
+               ORDER BY b.billed_on, b.order_id
+               ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+             ) AS running
+      FROM bills b
+      WHERE b.total - b.paid > 0
+    )
+    SELECT ob.order_id, ob.reference, ob.received_on, ob.total,
+           -- Oldest first: the pool covers each bill in turn until it runs out,
+           -- and what it leaves on a bill is what the bill is offered at.
+           ob.due - LEAST(ob.due, GREATEST(pool.available - (ob.running - ob.due), 0))
+             AS outstanding
+    FROM open_bills ob, pool
+    WHERE ob.due - LEAST(ob.due, GREATEST(pool.available - (ob.running - ob.due), 0)) > 0
     -- Most recently delivered first. NULLS FIRST is Postgres' own default for a
     -- descending sort and is spelled out here so it survives a rewrite.
-    ORDER BY o.received_on DESC NULLS FIRST, o.order_id DESC`;
+    ORDER BY ob.received_on DESC NULLS FIRST, ob.order_id DESC`;
 
   return rows.map((r) => ({
     orderId: r.order_id,
     reference: r.reference,
     receivedOn: toDateOnly(r.received_on),
     total: r.total.toFixed(2),
+    paid: r.total.minus(r.outstanding).toFixed(2),
+    outstanding: D(r.outstanding).toFixed(2),
   }));
 }
 

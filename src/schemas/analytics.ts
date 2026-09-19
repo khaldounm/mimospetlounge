@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CATEGORY_GROUPS } from "@/constants/analytics";
 
 // The analytics sections that can be re-queried for a custom date range. The
 // snapshot section (inventory) is not time-boxed and so is not here.
@@ -59,6 +60,24 @@ export const itemPerformanceQuerySchema = z
   });
 
 export type ItemPerformanceQuery = z.infer<typeof itemPerformanceQuerySchema>;
+
+// Validates the "top lines in this category" lookup. The group and the label
+// are exactly what the category table shows, and the comparison mode is the
+// one the table was set to, so the dialog is the row it was opened from.
+export const categoryTopQuerySchema = z
+  .object({
+    group: z.enum(CATEGORY_GROUPS.map((g) => g.key) as [string, ...string[]]),
+    category: z.string().trim().min(1).max(100),
+    mode: z.enum(["mom", "yoy"]),
+    from: dateString,
+    to: dateString,
+  })
+  .refine((d) => d.from <= d.to, {
+    message: "from must be on or before to",
+    path: ["from"],
+  });
+
+export type CategoryTopQuery = z.infer<typeof categoryTopQuerySchema>;
 
 // Validates the predictive item search. An empty query is allowed and returns a
 // starting page, so opening the picker shows something rather than a blank box.

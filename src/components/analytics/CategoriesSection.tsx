@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import {
+  Button,
   Stack,
   Table,
   TableBody,
@@ -12,11 +13,14 @@ import {
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
+import FormatListNumberedIcon from "@mui/icons-material/FormatListNumbered";
 import { BarChart } from "@mui/x-charts/BarChart";
 import { useAnalyticsSection } from "@/hooks/useAnalyticsSection";
 import { formatRangeLabel, rangeSummary } from "@/utils/date-range";
 import DateRangeControl from "@/components/ui/DateRangeControl";
 import CollapsibleSection from "@/components/ui/CollapsibleSection";
+import { CATEGORY_TOP_LIMIT } from "@/constants/analytics";
+import CategoryTopDialog, { type CategoryTopTarget } from "./CategoryTopDialog";
 import {
   CHART_HEIGHT,
   ChartCard,
@@ -35,7 +39,14 @@ import type {
 
 type Mode = "mom" | "yoy";
 
-function GroupTable({ group }: { group: CategoryTrendGroup }) {
+function GroupTable({
+  group,
+  onOpen,
+}: {
+  group: CategoryTrendGroup;
+  // Opens the lines behind one category row.
+  onOpen: (target: CategoryTopTarget) => void;
+}) {
   return (
     <ChartCard title={group.label} full>
       <Table size="small">
@@ -46,11 +57,12 @@ function GroupTable({ group }: { group: CategoryTrendGroup }) {
             <TableCell align="right">Comparison</TableCell>
             <TableCell align="right">Change</TableCell>
             <TableCell align="right">%</TableCell>
+            <TableCell align="right" sx={{ width: 120 }} />
           </TableRow>
         </TableHead>
         <TableBody>
           {group.rows.map((row) => (
-            <TableRow key={row.label}>
+            <TableRow key={row.label} hover>
               <TableCell>{row.label}</TableCell>
               <TableCell align="right">{money(row.current)}</TableCell>
               <TableCell align="right">{money(row.prior)}</TableCell>
@@ -61,6 +73,27 @@ function GroupTable({ group }: { group: CategoryTrendGroup }) {
                   prior={row.prior}
                   percent={row.percent}
                 />
+              </TableCell>
+              <TableCell align="right">
+                {/* A labelled button rather than a bare icon: this is the way
+                    into the category and it has to read as one. */}
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="primary"
+                  startIcon={<FormatListNumberedIcon />}
+                  aria-label={`Top ${CATEGORY_TOP_LIMIT} in ${row.label}`}
+                  onClick={() =>
+                    onOpen({
+                      group: group.key,
+                      groupLabel: group.label,
+                      category: row.label,
+                    })
+                  }
+                  sx={{ whiteSpace: "nowrap" }}
+                >
+                  Top {CATEGORY_TOP_LIMIT}
+                </Button>
               </TableCell>
             </TableRow>
           ))}
@@ -82,6 +115,7 @@ function GroupTable({ group }: { group: CategoryTrendGroup }) {
                 percent={group.percent}
               />
             </TableCell>
+            <TableCell />
           </TableRow>
         </TableBody>
       </Table>
@@ -100,6 +134,9 @@ export default function CategoriesSection({
   const { range, data, loading, error, setRange, load } =
     useAnalyticsSection<CategoriesAnalytics>("categories", initialRange);
   const [mode, setMode] = useState<Mode>("mom");
+  // The category row whose lines are open, if any. Its dialog reads the
+  // section's range and comparison, so it shows the row it was opened from.
+  const [topTarget, setTopTarget] = useState<CategoryTopTarget | null>(null);
   const comparison = data?.[mode] ?? null;
   const hasData = (comparison?.groups.length ?? 0) > 0;
 
@@ -191,10 +228,20 @@ export default function CategoriesSection({
                 />
               </ChartCard>
               {comparison.groups.map((group) => (
-                <GroupTable key={group.key} group={group} />
+                <GroupTable
+                  key={group.key}
+                  group={group}
+                  onOpen={setTopTarget}
+                />
               ))}
             </Stack>
           )}
+          <CategoryTopDialog
+            target={topTarget}
+            range={range}
+            mode={mode}
+            onClose={() => setTopTarget(null)}
+          />
         </>
       ) : (
         <SectionPlaceholder error={error} />

@@ -45,6 +45,7 @@ import type {
   SupplierContactDTO,
   SupplierDTO,
 } from "@/types/entities";
+import AppLink from "@/components/ui/AppLink";
 import InventoryItemFormDialog from "@/components/inventory/InventoryItemFormDialog";
 import ReceiveOrderDialog from "./ReceiveOrderDialog";
 import SendOrderDialog from "./SendOrderDialog";
@@ -56,7 +57,9 @@ import SupplierReturnDialog from "./SupplierReturnDialog";
 // "contains", which also means a scanned EAN-13 finds the GTIN-14 it is stored
 // as, since the 13 digits sit inside the padded 14.
 const filterPickable = createFilterOptions<InventoryItemDTO>({
-  stringify: (o) => `${o.name} ${o.barcode ?? ""}`,
+  // The supplier's code too: an order is often keyed straight off their price
+  // list, where that code is what the line is called.
+  stringify: (o) => `${o.name} ${o.barcode ?? ""} ${o.supplierCode ?? ""}`,
 });
 
 interface Props {
@@ -162,6 +165,8 @@ export default function OrderDetail({
   const [returnOpen, setReturnOpen] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
   const [sent, setSent] = useState<string | null>(null);
+  // The order the rest was just moved to, for the notice with a link to it.
+  const [splitInto, setSplitInto] = useState<PurchaseOrderDTO | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
 
   // Memoized so the fallback empty array is stable across renders and does not
@@ -274,6 +279,33 @@ export default function OrderDetail({
     await mutate(`/api/orders/${order.orderId}/${action}`, { method: "POST" });
   }
 
+  // Close at what arrived, rest to a new order. Distinct from close short: the
+  // rest is still expected, it just gets its own sheet and its own bill.
+  async function splitRest() {
+    if (
+      !window.confirm(
+        "Close this order at what has arrived and move the rest to a new order? This order becomes a bill for the delivered goods; the new order carries the rest at the same prices.",
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await apiRequest<{
+        order: PurchaseOrderDTO;
+        splitOrder: PurchaseOrderDTO;
+      }>(`/api/orders/${order.orderId}/split`, { method: "POST" });
+      setOrder(res.order);
+      setSplitInto(res.splitOrder);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function deleteDraft() {
     if (!window.confirm("Delete this draft? Its lines go with it.")) return;
     setError(null);
@@ -329,6 +361,27 @@ export default function OrderDetail({
             color={ORDER_STATUS_COLOR[order.status]}
             label={order.status}
           />
+          {/* The two ends of a split, each pointing at the other. */}
+          {order.splitFrom && (
+            <Chip
+              size="small"
+              variant="outlined"
+              component={AppLink}
+              href={`/orders/${order.splitFrom.orderId}`}
+              clickable
+              label={`Rest of ${order.splitFrom.reference || `#${order.splitFrom.orderId}`}`}
+            />
+          )}
+          {order.continuedIn && (
+            <Chip
+              size="small"
+              variant="outlined"
+              component={AppLink}
+              href={`/orders/${order.continuedIn.orderId}`}
+              clickable
+              label={`Rest moved to ${order.continuedIn.reference || `#${order.continuedIn.orderId}`}`}
+            />
+          )}
         </Stack>
         <Stack direction="row" spacing={1}>
           {/* The order as a document, independent of how it reaches the
@@ -390,13 +443,24 @@ export default function OrderDetail({
             </Tooltip>
           )}
           {canWrite && order.status === "Partial" && (
-            <Button
-              color="warning"
-              disabled={busy}
-              onClick={() => void transition("close-short")}
-            >
-              Close short
-            </Button>
+            <>
+              <Tooltip title="Close this order at what has arrived, so it can be paid, and move the rest to a new order.">
+                <Button
+                  variant="outlined"
+                  disabled={busy}
+                  onClick={() => void splitRest()}
+                >
+                  Split the rest
+                </Button>
+              </Tooltip>
+              <Button
+                color="warning"
+                disabled={busy}
+                onClick={() => void transition("close-short")}
+              >
+                Close short
+              </Button>
+            </>
           )}
           {/* Only once something has actually arrived: you cannot send back
               what was never delivered. A return is its own document, so this
@@ -447,6 +511,28 @@ export default function OrderDetail({
       {sent && (
         <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSent(null)}>
           {`Order sent to ${sent} on WhatsApp.`}
+        </Alert>
+      )}
+
+      {splitInto && (
+        <Alert
+          severity="success"
+          sx={{ mb: 2 }}
+          onClose={() => setSplitInto(null)}
+          action={
+            <Button
+              component={AppLink}
+              href={`/orders/${splitInto.orderId}`}
+              color="inherit"
+              size="small"
+            >
+              Open it
+            </Button>
+          }
+        >
+          This order now covers what arrived and can be paid. The rest (
+          {splitInto.lineCount} {splitInto.lineCount === 1 ? "line" : "lines"},{" "}
+          {formatMoney(splitInto.total)}) moved to order #{splitInto.orderId}.
         </Alert>
       )}
 
@@ -552,6 +638,15 @@ export default function OrderDetail({
                     {l.unit && (
                       <Typography variant="caption" color="text.secondary">
                         {` (${l.unit})`}
+                      </Typography>
+                    )}
+                    {l.supplierCode && (
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ display: "block" }}
+                      >
+                        Code {l.supplierCode}
                       </Typography>
                     )}
                   </TableCell>
@@ -811,8 +906,9 @@ export default function OrderDetail({
         order={order}
         canSeeCost={canSeeCost}
         onClose={() => setReceiveOpen(false)}
-        onReceived={(next) => {
+        onReceived={(next, split) => {
           setOrder(next);
+          setSplitInto(split);
           router.refresh();
         }}
         // An item put on the order from inside the receipt is saved there and

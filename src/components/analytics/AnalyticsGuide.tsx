@@ -190,6 +190,11 @@ export default function AnalyticsGuide() {
                 percentage to show. n/a means it netted negative (a discount
                 line), which a percentage cannot describe.
               </Term>
+              <Term label="Top lines (the list icon on a row)">
+                The 15 best-billing items or services behind that category, over
+                the same dates and against the same comparison, with what they
+                add up to next to the whole category. Loaded only when opened.
+              </Term>
             </Section>
 
             <Section title="Clients & patients">

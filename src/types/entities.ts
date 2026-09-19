@@ -59,6 +59,36 @@ export interface PatientDTO {
   reviewNote: string | null;
 }
 
+// One pet on the upcoming-birthdays list. The owner's phone rides along, as
+// stored, so wishes can be sent from the list; it is client data and the list
+// is gated the same way the client list is.
+export interface UpcomingBirthdayDTO {
+  patientId: number;
+  name: string;
+  species: string | null;
+  breed: string | null;
+  clientId: number;
+  clientName: string;
+  clientPhone: string | null;
+  dateOfBirth: string;
+  // The birthday inside the window, as a calendar day, and the age reached.
+  birthday: string;
+  turns: number;
+  // Ticked off inside this window (wishes sent, or nothing to send).
+  seen: boolean;
+}
+
+export interface UpcomingBirthdays {
+  // The window, both ends inclusive.
+  from: string;
+  to: string;
+  patients: UpcomingBirthdayDTO[];
+  // How many live pets carry a date of birth at all, against the total, so an
+  // empty list can say whether it is empty or the dates were never recorded.
+  withBirthDate: number;
+  total: number;
+}
+
 export interface BookingDTO {
   bookingId: number;
   patientId: number;
@@ -159,6 +189,10 @@ export interface InventoryItemDTO {
   name: string;
   category: string | null;
   barcode: string | null;
+  // The supplier's own product code, for their price list and delivery notes.
+  // Free text, not unique, never scanned: it identifies the item to the rep,
+  // not to the till.
+  supplierCode: string | null;
   unit: string | null;
   currentStock: number;
   reorderLevel: number;
@@ -787,6 +821,24 @@ export interface CategoriesAnalytics {
   yoy: CategoryComparison; // against the same dates one year earlier
 }
 
+// One line behind a category: a stock item, a service, or for the ad-hoc
+// bucket the free text typed at the counter. Same figures as the category row
+// it sits under, so the dialog's total is the row it was opened from.
+export interface CategoryTopLine extends CategoryTrendRow {
+  // Net units over the selected range (sold less returned). Null on an ad-hoc
+  // line, where a quantity means nothing in particular.
+  units: number | null;
+}
+
+export interface CategoryTopLines {
+  group: string;
+  category: string;
+  priorRange: AnalyticsRange;
+  // The whole category, so the dialog can say how much of it the list covers.
+  total: CategoryTrendRow;
+  lines: CategoryTopLine[];
+}
+
 // ── Per-item performance ──────────────────────────────────
 //
 // How one stock item actually traded over a window, read off the invoice lines
@@ -1041,6 +1093,9 @@ export interface PurchaseOrderLineDTO {
   tracksExpiry: boolean;
   // Matched against a scanned carton so the scan fills the right line.
   barcode: string | null;
+  // The supplier's own code for the item, printed on the order so the rep can
+  // read the line in their own terms.
+  supplierCode: string | null;
   notes: string | null;
 }
 
@@ -1096,6 +1151,12 @@ export interface PurchaseOrderDTO {
   total: string; // taxable base plus tax
   createdByName: string | null;
   createdAt: string;
+  // The two ends of a split. A short delivery can close its order at what
+  // arrived and move the rest to a new order: the new one names where it came
+  // from, the old one names where the rest went. Both null on an order that
+  // was raised on its own, which is every order before this existed.
+  splitFrom: { orderId: number; reference: string | null } | null;
+  continuedIn: { orderId: number; reference: string | null } | null;
   lines?: PurchaseOrderLineDTO[];
 }
 
@@ -1109,6 +1170,11 @@ export interface PayableOrderOption {
   reference: string | null;
   receivedOn: string | null;
   total: string;
+  // What has already been put against this bill, payments and credit notes
+  // both, and what that leaves. A bill with nothing left is not offered at
+  // all, so `outstanding` is always positive here.
+  paid: string;
+  outstanding: string;
 }
 
 // The money side of a consignment relationship, split so the clinic can tell

@@ -86,6 +86,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
   },
   colDesc: { width: "52%" },
+  // With a supplier-code column the description gives up the room for it.
+  // The column only appears when some line carries a code, so an order for a
+  // catalogue without codes prints exactly as it always has.
+  colDescWithCode: { width: "38%" },
+  colCode: { width: "14%" },
   colQty: { width: "12%", textAlign: "right" },
   colUnit: { width: "18%", textAlign: "right" },
   colTotal: { width: "18%", textAlign: "right" },
@@ -146,6 +151,10 @@ export default function OrderPdfDocument({
 }) {
   const reference = order.reference || `PO-${order.orderId}`;
   const lines = order.lines ?? [];
+  // The supplier's own product codes, where the catalogue has them. This is
+  // the column the rep actually reads.
+  const showCodes = lines.some((l) => l.supplierCode);
+  const colDesc = showCodes ? styles.colDescWithCode : styles.colDesc;
   const discount = Number(order.discountAmount ?? 0);
   const shipping = Number(order.shippingAmount ?? 0);
   const tax = Number(order.taxAmount ?? 0);
@@ -225,14 +234,15 @@ export default function OrderPdfDocument({
             units shows that underneath so the supplier reads what was meant. */}
         <View style={styles.table}>
           <View style={styles.tableHeader}>
-            <Text style={styles.colDesc}>Item</Text>
+            <Text style={colDesc}>Item</Text>
+            {showCodes ? <Text style={styles.colCode}>Your code</Text> : null}
             <Text style={styles.colQty}>Qty</Text>
             <Text style={styles.colUnit}>Unit cost</Text>
             <Text style={styles.colTotal}>Amount</Text>
           </View>
           {lines.map((l) => (
             <View key={l.lineId} style={styles.tableRow} wrap={false}>
-              <View style={styles.colDesc}>
+              <View style={colDesc}>
                 <Text>{l.itemName}</Text>
                 {l.looseQty && l.looseUnit ? (
                   <Text style={styles.lineNote}>
@@ -243,6 +253,9 @@ export default function OrderPdfDocument({
                   <Text style={styles.lineNote}>{l.notes}</Text>
                 ) : null}
               </View>
+              {showCodes ? (
+                <Text style={styles.colCode}>{l.supplierCode ?? ""}</Text>
+              ) : null}
               <Text style={styles.colQty}>
                 {l.unit ? `${l.quantityOrdered} ${l.unit}` : l.quantityOrdered}
               </Text>

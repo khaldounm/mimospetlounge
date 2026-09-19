@@ -188,6 +188,11 @@ export const receiveOrderSchema = z.object({
       });
     }),
   receivedOn: optionalDate,
+  // When the delivery is short: close this order at what arrived and move the
+  // rest to a new order, rather than leaving it Partial. A strict boolean for
+  // the same reason as markPlaced below: coercion would read "false" as true,
+  // and this rewrites the order's lines.
+  splitRemainder: z.boolean().optional(),
 });
 
 // Bulk push from the inventory low-stock basket. Each line is routed to the
