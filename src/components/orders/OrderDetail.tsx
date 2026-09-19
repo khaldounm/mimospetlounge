@@ -32,6 +32,7 @@ import WhatsAppIcon from "@mui/icons-material/WhatsApp";
 import { apiRequest } from "@/utils/api-client";
 import { formatDate, formatMoney } from "@/utils/format";
 import { suggestedReorderQuantity } from "@/utils/inventory";
+import { useInventoryChanges } from "@/hooks/useInventoryChanges";
 import {
   DEFAULT_VAT_RATE,
   NO_SUPPLIER_LABEL,
@@ -242,6 +243,28 @@ export default function OrderDetail({
 
   const patchOrder = (body: Record<string, unknown>) =>
     mutate(`/api/orders/${order.orderId}`, { method: "PATCH", body });
+
+  // An item fixed in the tab a line's link opened. Pull the order again so
+  // every line carries what was just saved (name, code, barcode, pack size,
+  // stock), and the receiving dialog with it, since it reads its rows from
+  // this order and keys what was typed by line id. Not routed through mutate:
+  // this is nobody's action here, so it neither greys the page out nor puts
+  // its failure in the error bar. A refetch that fails leaves the page as it
+  // was, and the next action on it fetches the order anyway.
+  useInventoryChanges(() => {
+    void (async () => {
+      try {
+        const res = await apiRequest<{ order: PurchaseOrderDTO }>(
+          `/api/orders/${order.orderId}`,
+        );
+        setOrder(res.order);
+        // The picker above the table is server-rendered from every item.
+        router.refresh();
+      } catch {
+        // Intentionally ignored. See above.
+      }
+    })();
+  });
 
   const patchLine = (lineId: number, body: Record<string, unknown>) =>
     mutate(`/api/orders/${order.orderId}/lines/${lineId}`, {

@@ -38,3 +38,8 @@ const LABEL_NAME_LINE_MM = LABEL_NAME_PT * 0.3528 * 1.15;
 // overflow and be clipped by the die cut, losing the human-readable digits.
 export const LABEL_BARCODE_MAX_HEIGHT_MM =
   LABEL_HEIGHT_MM - 2 * LABEL_PADDING_MM - LABEL_NAME_LINE_MM - LABEL_GAP_MM;
+
+// The BroadcastChannel an item is announced on once it is saved or its stock
+// moved, so an order open in another tab can pick the change up. See
+// useInventoryChanges.
+export const INVENTORY_CHANGES_CHANNEL = "inventory-changes";

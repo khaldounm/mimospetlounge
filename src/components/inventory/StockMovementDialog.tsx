@@ -13,6 +13,7 @@ import {
   TextField,
 } from "@mui/material";
 import { apiRequest } from "@/utils/api-client";
+import { announceInventoryChange } from "@/hooks/useInventoryChanges";
 import {
   MANUAL_TX_TYPES,
   SIGNED_TX_TYPES,
@@ -98,6 +99,8 @@ function StockMovementForm({
           notes,
         },
       });
+      // The order page shows this item's stock on its line.
+      announceInventoryChange(itemId);
       onSaved();
       onClose();
     } catch (err) {

@@ -21,6 +21,7 @@ import AutoFixHighIcon from "@mui/icons-material/AutoFixHigh";
 import QrCode2Icon from "@mui/icons-material/QrCode2";
 // import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import { apiRequest } from "@/utils/api-client";
+import { announceInventoryChange } from "@/hooks/useInventoryChanges";
 import PayoutPreview from "@/components/ui/PayoutPreview";
 import { INVENTORY_CATEGORIES } from "@/constants/inventory";
 import { isValidEan13 } from "@/utils/barcode";
@@ -294,6 +295,9 @@ function InventoryItemForm({
             method: "POST",
             body,
           });
+      // Before onSaved, which may navigate away: an order open in another tab
+      // shows this item's name, code, barcode and pack size on its lines.
+      announceInventoryChange(res.item.itemId);
       onSaved(res.item);
       onClose();
     } catch (err) {

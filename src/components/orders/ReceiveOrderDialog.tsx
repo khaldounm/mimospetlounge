@@ -143,11 +143,15 @@ function ReceiveForm({
   const [addedLines, setAddedLines] = useState<PurchaseOrderLineDTO[]>([]);
   // Only lines with something still expected can take a delivery. One added in
   // here arrives back in the order prop as well, since the page is told the
-  // moment it is saved, so the prop's copy is dropped in favour of the local
-  // one: carrying both would put the same carton on the delivery twice.
-  const addedIds = new Set(addedLines.map((l) => l.lineId));
+  // moment it is saved, so it is taken out of the prop's lines: carrying both
+  // would put the same carton on the delivery twice. It keeps its place at the
+  // bottom, but the prop's copy is the one shown once there is one, because
+  // that is the copy an item edited in another tab reaches.
+  const byLineId = new Map((order.lines ?? []).map((l) => [l.lineId, l]));
   const orderedLines = (order.lines ?? []).filter(
-    (l) => Number(l.quantityOutstanding) > 0 && !addedIds.has(l.lineId),
+    (l) =>
+      Number(l.quantityOutstanding) > 0 &&
+      !addedLines.some((a) => a.lineId === l.lineId),
   );
   const [addingItem, setAddingItem] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
@@ -159,7 +163,10 @@ function ReceiveForm({
   const [pendingItem, setPendingItem] = useState<InventoryItemDTO | null>(null);
   const [pendingQty, setPendingQty] = useState("");
   const [pendingCost, setPendingCost] = useState("");
-  const outstanding = [...orderedLines, ...addedLines];
+  const outstanding = [
+    ...orderedLines,
+    ...addedLines.map((l) => byLineId.get(l.lineId) ?? l),
+  ];
   // Two different empty orders, needing opposite things said about them. One
   // whose lines are all delivered is finished; one that never had a line is a
   // walk-in waiting for the goods on the counter to be keyed in below.
