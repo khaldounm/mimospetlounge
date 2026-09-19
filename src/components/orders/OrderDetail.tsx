@@ -634,7 +634,12 @@ export default function OrderDetail({
               lines.map((l) => (
                 <TableRow key={l.lineId} hover>
                   <TableCell>
-                    {l.itemName}
+                    {/* A new tab, because the clinic is mid-order when it
+                        finds the item needs fixing (a cost, a barcode, a pack
+                        size) and wants the order still open when it is done. */}
+                    <AppLink href={`/inventory/${l.itemId}`} target="_blank">
+                      {l.itemName}
+                    </AppLink>
                     {l.unit && (
                       <Typography variant="caption" color="text.secondary">
                         {` (${l.unit})`}

@@ -40,6 +40,7 @@ import { toDateOnly } from "@/utils/format";
 import { toGtin14 } from "@/utils/barcode";
 import { beepAccept, beepReject } from "@/utils/beep";
 import { parseGs1, scannedLookupCode } from "@/utils/gs1";
+import AppLink from "@/components/ui/AppLink";
 import InventoryItemFormDialog from "@/components/inventory/InventoryItemFormDialog";
 import type {
   InventoryItemDTO,
@@ -755,7 +756,18 @@ function ReceiveForm({
                               }
                             >
                               <Box>
-                                {l.itemName}
+                                {/* Same new-tab link as the order page. Out
+                                    of the tab order on purpose: a delivery is
+                                    keyed by tabbing across a row's inputs to
+                                    the next row's, and a stop on every name
+                                    would break that rhythm. */}
+                                <AppLink
+                                  href={`/inventory/${l.itemId}`}
+                                  target="_blank"
+                                  tabIndex={-1}
+                                >
+                                  {l.itemName}
+                                </AppLink>
                                 {l.unit && (
                                   <Typography
                                     variant="caption"
