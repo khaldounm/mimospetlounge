@@ -34,6 +34,8 @@ interface Props {
   letters: { letter: string; count: number }[];
   initialReviewCount: number;
   canWrite: boolean;
+  /** notifications:write: the birthdays list can send wishes. */
+  canSendWishes: boolean;
 }
 
 export default function PatientsTable({
@@ -43,6 +45,7 @@ export default function PatientsTable({
   letters,
   initialReviewCount,
   canWrite,
+  canSendWishes,
 }: Props) {
   const [patients, setPatients] = useState(initialPatients);
   const [total, setTotal] = useState(initialTotal);
@@ -208,6 +211,7 @@ export default function PatientsTable({
       <BirthdaysDialog
         open={birthdaysOpen}
         canWrite={canWrite}
+        canSend={canSendWishes}
         onClose={() => setBirthdaysOpen(false)}
       />
     </Box>

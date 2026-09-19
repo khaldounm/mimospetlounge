@@ -123,7 +123,7 @@ function TemplateForm({ template, onClose, onSaved }: FormProps) {
               value={triggerEvent}
               onChange={(e) => setTriggerEvent(e.target.value)}
               fullWidth
-              helperText="Booking reminders can be attached to bookings"
+              helperText="Booking reminders attach to bookings; birthday wishes send from the birthdays list"
               // "" is a real choice here (picked by hand), so it is shown by
               // name rather than as an empty box.
               slotProps={{

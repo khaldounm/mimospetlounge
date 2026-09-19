@@ -88,6 +88,8 @@ export interface RenderContext {
   serviceName?: string | null;
   bookingStartsAt?: Date | null;
   dueDate?: string | null;
+  // The age the pet turns, on birthday wishes. Absent everywhere else.
+  petAge?: number | null;
 }
 
 // "YYYY-MM-DD" -> "DD/MM/YYYY", empty string for null/undefined.
@@ -106,6 +108,7 @@ export function renderBody(template: string, ctx: RenderContext): string {
     "{{client_first_name}}": ctx.clientFirstName,
     "{{patient_name}}": ctx.patientName ?? "",
     "{{service_name}}": ctx.serviceName ?? "",
+    "{{pet_age}}": ctx.petAge != null ? String(ctx.petAge) : "",
     "{{booking_date}}": at
       ? at.toLocaleDateString("en-US", {
           timeZone: CLINIC.timezone,

@@ -31,5 +31,13 @@ export const birthdaySeenSchema = z.object({
   seen: z.boolean(),
 });
 
+// Sending one pet its birthday wishes. The template is the one picked on the
+// list (any active birthday template), defaulting on the server when absent;
+// `body` sends an edited text to this pet only, the template stays as it was.
+export const birthdayWishesSchema = z.object({
+  templateId: z.number().int().positive().optional(),
+  body: optionalString(5000),
+});
+
 export type PatientCreateInput = z.infer<typeof patientCreateSchema>;
 export type PatientUpdateInput = z.infer<typeof patientUpdateSchema>;

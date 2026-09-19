@@ -62,6 +62,15 @@ export interface PatientDTO {
 // One pet on the upcoming-birthdays list. The owner's phone rides along, as
 // stored, so wishes can be sent from the list; it is client data and the list
 // is gated the same way the client list is.
+// The wishes message that went out (or tried to) for this birthday: the
+// latest notification from any birthday template inside the pet's window.
+export interface BirthdayWishesDTO {
+  notificationId: number;
+  status: NotificationStatus;
+  sentAt: string | null;
+  errorMessage: string | null;
+}
+
 export interface UpcomingBirthdayDTO {
   patientId: number;
   name: string;
@@ -76,6 +85,13 @@ export interface UpcomingBirthdayDTO {
   turns: number;
   // Ticked off inside this window (wishes sent, or nothing to send).
   seen: boolean;
+  // The wishes text as the Send button will dispatch it, rendered from the
+  // list's template. Null when the clinic has no birthday template.
+  preview: string | null;
+  // The number the wishes go to, normalised. Null when the client's number is
+  // missing or unusable, in which case Send refuses.
+  recipient: string | null;
+  wishes: BirthdayWishesDTO | null;
 }
 
 export interface UpcomingBirthdays {
@@ -87,6 +103,10 @@ export interface UpcomingBirthdays {
   // empty list can say whether it is empty or the dates were never recorded.
   withBirthDate: number;
   total: number;
+  // The active birthday templates on offer, and the one every preview above
+  // was rendered with. Empty and null until the clinic creates one.
+  templates: ReminderTemplateOption[];
+  templateId: number | null;
 }
 
 export interface BookingDTO {

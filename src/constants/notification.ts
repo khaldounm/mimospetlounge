@@ -18,6 +18,11 @@ export const RECALL_RECORD_TYPES: RecordType[] = [
 // type names one as its default, a booking carries the one attached to it.
 export const BOOKING_REMINDER_TRIGGER = "booking_reminder";
 
+// Canonical trigger_event label that marks a template as birthday wishes. The
+// upcoming-birthdays list sends with one of these; until the clinic has one
+// the list only offers to open a chat.
+export const BIRTHDAY_TRIGGER = "birthday";
+
 // What the template form offers for trigger_event, instead of free text. The
 // column is the routing key for reminders, so a typo there used to mean a
 // template that silently never sent. "None" is a template picked by hand in
@@ -25,6 +30,7 @@ export const BOOKING_REMINDER_TRIGGER = "booking_reminder";
 export const TEMPLATE_TRIGGERS: { value: string; label: string }[] = [
   { value: "", label: "None (picked by hand)" },
   { value: BOOKING_REMINDER_TRIGGER, label: "Booking reminder" },
+  { value: BIRTHDAY_TRIGGER, label: "Birthday wishes" },
 ];
 
 // Reads a stored trigger_event back as its label, falling through to the raw
@@ -118,6 +124,9 @@ export const NOTIFICATION_PLACEHOLDERS: { token: string; label: string }[] = [
   // "Rabies booster") when following up from a recall tab, the booking type
   // ("Grooming") on a booking reminder.
   { token: "{{service_name}}", label: "Service or record name" },
+  // The age the pet reaches on the birthday being wished. Empty outside the
+  // birthdays list, where there is no birthday to count to.
+  { token: "{{pet_age}}", label: "Age the pet turns" },
   { token: "{{booking_date}}", label: "Booking date" },
   { token: "{{booking_time}}", label: "Booking time" },
   { token: "{{clinic_name}}", label: "Clinic name" },
