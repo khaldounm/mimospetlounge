@@ -9,11 +9,21 @@ export const USER_ADMIN_PERMISSION = "users:write";
 
 const BCRYPT_ROUNDS = 10;
 
-// Relations pulled when rendering a user with its role + permission summary.
-export const userInclude = {
+// What a sign-in needs: the role and its permission names, nothing else. Kept
+// separate from userInclude below so the two sign-in queries stay as small as
+// they are.
+export const sessionUserInclude = {
   role: {
     include: { rolePermissions: { include: { permission: true } } },
   },
+} as const;
+
+// Relations pulled when rendering a user on the staff list: role + permission
+// summary, and the passkeys' last use so the list can say which door each
+// person is signing in through.
+export const userInclude = {
+  ...sessionUserInclude,
+  passkeys: { select: { lastUsedAt: true } },
 } as const;
 
 type UserRow = {
@@ -25,16 +35,25 @@ type UserRow = {
   roleId: number;
   isActive: boolean;
   lastLoginAt: Date | null;
+  lastPasswordLoginAt: Date | null;
   createdAt: Date;
   role: {
     name: string;
     rolePermissions: { permission: { name: string } }[];
   };
+  passkeys: { lastUsedAt: Date | null }[];
 };
 
 export function toUserDTO(u: UserRow): UserDTO {
   const canManageUsers = u.role.rolePermissions.some(
     (rp) => rp.permission.name === USER_ADMIN_PERMISSION,
+  );
+  const lastPasskeyUsedAt = u.passkeys.reduce<Date | null>(
+    (latest, p) =>
+      p.lastUsedAt && (!latest || p.lastUsedAt > latest)
+        ? p.lastUsedAt
+        : latest,
+    null,
   );
   return {
     userId: u.userId,
@@ -47,6 +66,13 @@ export function toUserDTO(u: UserRow): UserDTO {
     isActive: u.isActive,
     canManageUsers,
     lastLoginAt: u.lastLoginAt ? u.lastLoginAt.toISOString() : null,
+    lastPasswordLoginAt: u.lastPasswordLoginAt
+      ? u.lastPasswordLoginAt.toISOString()
+      : null,
+    passkeyCount: u.passkeys.length,
+    lastPasskeyUsedAt: lastPasskeyUsedAt
+      ? lastPasskeyUsedAt.toISOString()
+      : null,
     createdAt: u.createdAt.toISOString(),
   };
 }

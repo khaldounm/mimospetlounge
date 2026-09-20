@@ -6,7 +6,7 @@ import { Box, Button, Divider, Paper, Stack, Typography } from "@mui/material";
 import KeyRoundedIcon from "@mui/icons-material/KeyRounded";
 import PhoneIphoneRoundedIcon from "@mui/icons-material/PhoneIphoneRounded";
 import AddRoundedIcon from "@mui/icons-material/AddRounded";
-import { usePasskeyRegistration } from "@/hooks/usePasskeys";
+import { forgetPasskey, usePasskeyRegistration } from "@/hooks/usePasskeys";
 import { apiRequest } from "@/utils/api-client";
 import { formatDate } from "@/utils/format";
 import type { PasskeyDTO } from "@/types/passkeys";
@@ -42,6 +42,9 @@ function PasskeyRow({
       await apiRequest(`/api/account/passkeys/${passkey.id}`, {
         method: "DELETE",
       });
+      // If this device is the one holding it, it stops offering it now
+      // rather than at the next failed sign-in.
+      forgetPasskey(passkey.id);
       onRemoved();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not remove it");

@@ -1,12 +1,27 @@
-import NextAuth from "next-auth";
+import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { authConfig } from "./auth.config";
 import { prisma } from "./prisma";
-import { toSessionUser, userInclude } from "@/lib/users";
-import { readChallenge, verifyAssertion } from "@/lib/passkeys";
-import { PASSKEY_PROVIDER_ID } from "@/constants/passkeys";
+import { sessionUserInclude, toSessionUser } from "@/lib/users";
+import {
+  readChallenge,
+  UnknownPasskeyError,
+  verifyAssertion,
+} from "@/lib/passkeys";
+import {
+  PASSKEY_PROVIDER_ID,
+  PASSKEY_UNKNOWN_CODE,
+} from "@/constants/passkeys";
 import { authenticationResponseSchema } from "@/schemas/passkey";
+
+// The one sign-in failure the browser can do something about: the phone
+// offered a passkey this account no longer holds. The code rides back to the
+// login page in the sign-in result, which then asks the browser to forget
+// that credential so it stops being offered. Says nothing about who exists.
+class UnknownPasskeySignin extends CredentialsSignin {
+  code = PASSKEY_UNKNOWN_CODE;
+}
 
 // Two ways to prove who you are, one shape coming out. Both providers return
 // toSessionUser(), so the jwt callback in auth.config.ts stamps the same fields
@@ -31,7 +46,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // email column is citext → match is case-insensitive at the DB level.
         const user = await prisma.user.findUnique({
           where: { email },
-          include: userInclude,
+          include: sessionUserInclude,
         });
 
         if (!user || !user.passwordHash || !user.isActive) return null;
@@ -39,9 +54,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const valid = await bcrypt.compare(password, user.passwordHash);
         if (!valid) return null;
 
+        // Both stamps in the one write. The second is what the staff list
+        // reads to say who is still typing a password.
+        const now = new Date();
         await prisma.user.update({
           where: { userId: user.userId },
-          data: { lastLoginAt: new Date() },
+          data: { lastLoginAt: now, lastPasswordLoginAt: now },
         });
 
         return toSessionUser(user);
@@ -77,7 +95,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         );
         if (!challenge) return null;
 
-        return verifyAssertion(response.data, challenge);
+        try {
+          return await verifyAssertion(response.data, challenge);
+        } catch (err) {
+          if (err instanceof UnknownPasskeyError) {
+            throw new UnknownPasskeySignin();
+          }
+          throw err;
+        }
       },
     }),
   ],

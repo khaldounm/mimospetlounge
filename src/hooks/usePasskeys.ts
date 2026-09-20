@@ -9,6 +9,7 @@ import { useCallback, useState, useSyncExternalStore } from "react";
 import { signIn } from "next-auth/react";
 import {
   browserSupportsWebAuthn,
+  sendSignal,
   startAuthentication,
   startRegistration,
   WebAuthnError,
@@ -16,7 +17,10 @@ import {
   type PublicKeyCredentialRequestOptionsJSON,
 } from "@simplewebauthn/browser";
 import { apiRequest } from "@/utils/api-client";
-import { PASSKEY_PROVIDER_ID } from "@/constants/passkeys";
+import {
+  PASSKEY_PROVIDER_ID,
+  PASSKEY_UNKNOWN_CODE,
+} from "@/constants/passkeys";
 import type { PasskeyDTO } from "@/types/passkeys";
 
 // idle: nothing happening. waiting: the browser's prompt is up and the person
@@ -56,6 +60,19 @@ function describe(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
 }
 
+// Asks the browser to forget a passkey this account no longer holds, so the
+// phone stops offering it. Best effort by design: browsers pass it on to the
+// password manager when they can and ignore it otherwise, and it never fails
+// the flow that called it.
+export function forgetPasskey(credentialID: string): void {
+  const rpID = window.location.hostname;
+  void sendSignal({
+    signalName: "unknownCredential",
+    rpID,
+    credentialID,
+  }).catch(() => undefined);
+}
+
 export function usePasskeySignIn() {
   const [phase, setPhase] = useState<PasskeyPhase>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +98,14 @@ export function usePasskeySignIn() {
         redirect: false,
       });
       if (result?.error) {
-        setError("That passkey was not accepted. Try again.");
+        if (result.code === PASSKEY_UNKNOWN_CODE) {
+          forgetPasskey(assertion.id);
+          setError(
+            "That passkey is no longer on your account. Pick another, or sign in with your password and add it again.",
+          );
+        } else {
+          setError("That passkey was not accepted. Try again.");
+        }
         setPhase("idle");
         return false;
       }

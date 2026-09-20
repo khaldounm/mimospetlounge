@@ -18,7 +18,10 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import AddIcon from "@mui/icons-material/Add";
+import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
+import CancelRoundedIcon from "@mui/icons-material/CancelRounded";
 import { apiRequest, redirectToSignIn } from "@/utils/api-client";
 import { formatDateTime } from "@/utils/format";
 import type { RoleOption, UserDTO } from "@/types/entities";
@@ -30,6 +33,50 @@ interface Props {
   roleOptions: RoleOption[];
   currentUserId: number | null;
   canWrite: boolean;
+}
+
+// Which door this person last came through: a passkey, or a password. Two
+// states only, read like a checklist. Someone who holds a passkey but last
+// typed a password is still "Password": the question is what they use, not
+// what they own. Never signed in counts as Password until they do.
+function usesPasskey(user: UserDTO): boolean {
+  const passkeyAt = user.lastPasskeyUsedAt;
+  const passwordAt = user.lastPasswordLoginAt;
+  if (!passkeyAt) return false;
+  return !passwordAt || passkeyAt >= passwordAt;
+}
+
+// Soft pill: tinted ground, dark text, filled icon. Softer than the solid
+// Active chip beside it so the two columns do not shout at each other.
+function SignInChip({ user }: { user: UserDTO }) {
+  const ok = usesPasskey(user);
+  return (
+    <Chip
+      size="small"
+      icon={ok ? <CheckCircleRoundedIcon /> : <CancelRoundedIcon />}
+      label={ok ? "Passkey" : "Password"}
+      sx={(theme) => {
+        const tone = ok ? theme.palette.success : theme.palette.error;
+        return {
+          bgcolor: alpha(tone.main, 0.12),
+          color: tone.dark,
+          fontWeight: 600,
+          "& .MuiChip-icon": { color: tone.main },
+        };
+      }}
+    />
+  );
+}
+
+// One line above the table, over active staff only: inactive accounts are not
+// being asked to do anything.
+function passkeySummary(users: UserDTO[]): string {
+  const active = users.filter((u) => u.isActive);
+  if (active.length === 0) return "";
+  const using = active.filter(usesPasskey).length;
+  return using === active.length
+    ? `All ${active.length} staff sign in with a passkey.`
+    : `${using} of ${active.length} staff sign in with a passkey.`;
 }
 
 export default function UsersTable({
@@ -139,6 +186,12 @@ export default function UsersTable({
         </Alert>
       )}
 
+      {passkeySummary(users) && (
+        <Typography color="text.secondary" sx={{ mb: 2 }}>
+          {passkeySummary(users)}
+        </Typography>
+      )}
+
       <TableContainer component={Paper}>
         <Table>
           <TableHead>
@@ -147,6 +200,7 @@ export default function UsersTable({
               <TableCell>Email</TableCell>
               <TableCell>Role</TableCell>
               <TableCell>Status</TableCell>
+              <TableCell>Sign-in</TableCell>
               <TableCell>Last login</TableCell>
               {canWrite && <TableCell align="right">Actions</TableCell>}
             </TableRow>
@@ -154,7 +208,7 @@ export default function UsersTable({
           <TableBody>
             {users.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={canWrite ? 6 : 5} align="center">
+                <TableCell colSpan={canWrite ? 7 : 6} align="center">
                   <Typography color="text.secondary" sx={{ py: 2 }}>
                     No users found.
                   </Typography>
@@ -182,6 +236,9 @@ export default function UsersTable({
                       />
                     </TableCell>
                     <TableCell>
+                      <SignInChip user={u} />
+                    </TableCell>
+                    <TableCell sx={{ whiteSpace: "nowrap" }}>
                       {u.lastLoginAt ? formatDateTime(u.lastLoginAt) : "Never"}
                     </TableCell>
                     {canWrite && (

@@ -30,7 +30,7 @@ import {
 import type { NextResponse } from "next/server";
 import type { User as SessionUser } from "next-auth";
 import { prisma } from "@/lib/prisma";
-import { toSessionUser, userInclude } from "@/lib/users";
+import { sessionUserInclude, toSessionUser } from "@/lib/users";
 import { CLINIC } from "@/constants/clinic";
 import {
   PASSKEY_CEREMONY_TIMEOUT_MS,
@@ -41,6 +41,11 @@ import {
 import type { PasskeyDTO } from "@/types/passkeys";
 
 export class PasskeyError extends Error {}
+
+// The assertion named a credential we do not hold: it was removed from the
+// account (or never belonged to this clinic) while the phone still keeps it.
+// Told apart from a failed check so the browser can be asked to forget it.
+export class UnknownPasskeyError extends PasskeyError {}
 
 // ---- Relying party ----
 
@@ -275,16 +280,17 @@ export function authenticationOptions(
 // the password provider shapes its result, or null. One select by primary key
 // (the credential id the assertion carries) and one update, which also stamps
 // the user's last sign-in: the same two queries a password sign-in costs,
-// minus the bcrypt.
+// minus the bcrypt. Throws UnknownPasskeyError when no such credential exists.
 export async function verifyAssertion(
   response: AuthenticationResponseJSON,
   expectedChallenge: string,
 ): Promise<SessionUser | null> {
   const passkey = await prisma.userPasskey.findUnique({
     where: { id: response.id },
-    include: { user: { include: userInclude } },
+    include: { user: { include: sessionUserInclude } },
   });
-  if (!passkey || !passkey.user.isActive) return null;
+  if (!passkey) throw new UnknownPasskeyError("Unknown passkey");
+  if (!passkey.user.isActive) return null;
 
   const rp = relyingParty();
   let verification;

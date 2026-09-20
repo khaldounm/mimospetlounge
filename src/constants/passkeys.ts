@@ -5,6 +5,10 @@
 // The login page passes it to signIn(); lib/auth.ts registers it.
 export const PASSKEY_PROVIDER_ID = "passkey";
 
+// Sign-in result code for "that passkey is not on the account any more". The
+// login page answers it by telling the browser to drop the credential.
+export const PASSKEY_UNKNOWN_CODE = "unknown_passkey";
+
 // The cookie that carries a signed challenge from the options call to the
 // verification that follows it. httpOnly so nothing in the page can read it,
 // and short because a challenge is good for exactly one ceremony.

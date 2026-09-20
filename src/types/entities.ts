@@ -503,6 +503,11 @@ export interface UserDTO {
   isActive: boolean;
   canManageUsers: boolean;
   lastLoginAt: string | null;
+  // Which door this person is using while passwords are phased out: the last
+  // password sign-in, how many passkeys they hold, and when one was last used.
+  lastPasswordLoginAt: string | null;
+  passkeyCount: number;
+  lastPasskeyUsedAt: string | null;
   createdAt: string;
 }
 
