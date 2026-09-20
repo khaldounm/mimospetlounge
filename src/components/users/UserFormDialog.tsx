@@ -13,9 +13,11 @@ import {
   Stack,
   Switch,
   TextField,
+  Typography,
 } from "@mui/material";
 import { apiRequest } from "@/utils/api-client";
 import PhoneField from "@/components/ui/PhoneField";
+import EnrollmentLinkPanel from "@/components/ui/EnrollmentLinkPanel";
 import type { RoleOption, UserDTO } from "@/types/entities";
 
 interface Props {
@@ -61,9 +63,12 @@ function UserForm({
     user?.roleId ?? roleOptions[0]?.roleId ?? "",
   );
   const [isActive, setIsActive] = useState(user?.isActive ?? true);
-  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // A new account has no password and no passkey until its link is used, so
+  // creating one is two steps: the details, then the link. The dialog stays
+  // open on the second step with the row already saved.
+  const [created, setCreated] = useState<UserDTO | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -75,19 +80,47 @@ function UserForm({
           method: "PATCH",
           body: { firstName, lastName, email, phone, roleId, isActive },
         });
+        onSaved();
+        onClose();
       } else {
-        await apiRequest("/api/users", {
-          method: "POST",
-          body: { firstName, lastName, email, phone, roleId, password },
-        });
+        const { user: saved } = await apiRequest<{ user: UserDTO }>(
+          "/api/users",
+          {
+            method: "POST",
+            body: { firstName, lastName, email, phone, roleId },
+          },
+        );
+        onSaved();
+        setCreated(saved);
       }
-      onSaved();
-      onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setSaving(false);
     }
+  }
+
+  if (created) {
+    return (
+      <>
+        <DialogTitle>Send {created.firstName} their sign-in link</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Typography color="text.secondary">
+              The account is saved. {created.firstName} opens the link on their
+              phone, confirms with Face ID or fingerprint, and is signed in. No
+              password.
+            </Typography>
+            <EnrollmentLinkPanel user={created} />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button variant="contained" onClick={onClose}>
+            Done
+          </Button>
+        </DialogActions>
+      </>
+    );
   }
 
   return (
@@ -136,18 +169,6 @@ function UserForm({
             ))}
           </TextField>
 
-          {!editing && (
-            <TextField
-              label="Initial password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              fullWidth
-              helperText="At least 8 characters. The user can change it later."
-            />
-          )}
-
           {editing && (
             <FormControlLabel
               control={
@@ -171,7 +192,7 @@ function UserForm({
           Cancel
         </Button>
         <Button type="submit" variant="contained" disabled={saving}>
-          {saving ? "Saving…" : "Save"}
+          {saving ? "Saving…" : editing ? "Save" : "Save and continue"}
         </Button>
       </DialogActions>
     </form>

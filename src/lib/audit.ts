@@ -43,7 +43,10 @@ function toJson(value: unknown): Prisma.InputJsonValue {
 // failure must never break the user's operation, so errors are swallowed and
 // logged. Pass the Session returned by requirePermission to capture the actor.
 export async function writeAudit(
-  session: Session | null | undefined,
+  // Usually the Session from requirePermission. The enrollment page has no
+  // session yet, only the user the link belongs to, so a bare actor is
+  // accepted too: what the log needs is the user id.
+  session: Session | { user: { userId: number } } | null | undefined,
   entry: AuditEntry,
 ): Promise<void> {
   try {

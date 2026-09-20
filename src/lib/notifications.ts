@@ -170,8 +170,9 @@ const WASENDER_DEFAULT_URL = "https://www.wasenderapi.com/api/send-message";
 // Sends a free-form text message via WaSenderApi (wasenderapi.com) and returns
 // the provider message id. Throws a descriptive Error when the API key is
 // missing or the provider rejects the request, so dispatchNotification records
-// the notification as Failed.
-async function sendViaWhatsApp(
+// the notification as Failed. Exported for the one send that is not a
+// notification row: a staff enrollment link.
+export async function sendTextViaWhatsApp(
   recipient: string,
   body: string,
 ): Promise<string> {
@@ -274,7 +275,7 @@ export async function dispatchNotification(
 
   try {
     if (n.channel === "WhatsApp") {
-      await sendViaWhatsApp(n.recipient, n.body);
+      await sendTextViaWhatsApp(n.recipient, n.body);
     } else {
       throw new Error(
         `${n.channel ?? "This channel"} sending is not implemented yet`,

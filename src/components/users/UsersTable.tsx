@@ -26,7 +26,7 @@ import { apiRequest, redirectToSignIn } from "@/utils/api-client";
 import { formatDateTime } from "@/utils/format";
 import type { RoleOption, UserDTO } from "@/types/entities";
 import UserFormDialog from "./UserFormDialog";
-import ResetPasswordDialog from "./ResetPasswordDialog";
+import ResetAccessDialog from "@/components/ui/ResetAccessDialog";
 
 interface Props {
   initialUsers: UserDTO[];
@@ -89,7 +89,8 @@ export default function UsersTable({
   const [query, setQuery] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<UserDTO | null>(null);
-  const [pwUser, setPwUser] = useState<UserDTO | null>(null);
+  const [resetUser, setResetUser] = useState<UserDTO | null>(null);
+  const [resetIssued, setResetIssued] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const firstRender = useRef(true);
@@ -251,9 +252,18 @@ export default function UsersTable({
                           <Button size="small" onClick={() => openEdit(u)}>
                             Edit
                           </Button>
-                          <Button size="small" onClick={() => setPwUser(u)}>
-                            Reset password
-                          </Button>
+                          <Tooltip title="Removes their passkeys, signs them out everywhere, and sends a new sign-in link. For a lost or new phone.">
+                            <Button
+                              size="small"
+                              disabled={!u.isActive}
+                              onClick={() => {
+                                setResetIssued(false);
+                                setResetUser(u);
+                              }}
+                            >
+                              Reset access
+                            </Button>
+                          </Tooltip>
                           <Tooltip
                             title={
                               isSelf
@@ -310,11 +320,23 @@ export default function UsersTable({
         onClose={() => setFormOpen(false)}
         onSaved={() => void load(query)}
       />
-      <ResetPasswordDialog
-        open={pwUser !== null}
-        user={pwUser}
-        onClose={() => setPwUser(null)}
-        onSaved={() => setPwUser(null)}
+      <ResetAccessDialog
+        open={resetUser !== null}
+        user={resetUser}
+        isSelf={resetUser?.userId === currentUserId}
+        onClose={() => {
+          // Resetting yourself ended this session too; go where the cookie
+          // gets cleared rather than let the next click 401.
+          if (resetUser?.userId === currentUserId && resetIssued) {
+            redirectToSignIn();
+            return;
+          }
+          setResetUser(null);
+        }}
+        onIssued={() => {
+          setResetIssued(true);
+          void load(query);
+        }}
       />
     </Box>
   );

@@ -46,6 +46,25 @@ Passkeys are registered against the origin in `NEXTAUTH_URL` (see
 scheme. A passkey made on one clinic's domain does not work on another's, and
 a preview deployment on a different hostname cannot use passkeys at all.
 
+## Staff sign-in: passkeys, links, no passwords
+
+Staff sign in with a passkey on their own phone. Nobody is given a password:
+
+- **New person**: Staff, New user, save, then "Send via WhatsApp" or "Copy
+  link". The link opens `/enroll?t=...`, they confirm with Face ID or a
+  fingerprint, and they are signed in. The link works once and for 15
+  minutes; only its SHA-256 is stored (`users.enrollment_token_hash`).
+- **Lost, stolen, replaced phone**: Staff, "Reset access" on their row. This
+  removes every passkey they hold, ends every session they have open, and
+  sends a fresh link. Same button for a new person and for recovery.
+- **Last admin locked out**: `ADMIN_EMAIL=... pnpm tsx prisma/add-user.ts`
+  against that clinic's database prints a link. It does the same wipe.
+- Nobody can request a link from the sign-in screen; only `users:write` can
+  issue one.
+
+Accounts that still have a password (from before passkeys) can keep using it
+until passwords are removed; no new password can be created or reset.
+
 ## Migrations run in the build
 
 Every Vercel project's Build Command is overridden to `pnpm vercel` (Settings >

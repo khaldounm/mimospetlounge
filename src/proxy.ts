@@ -24,13 +24,20 @@ export default auth((req) => {
   //   /api/cron/*     : verified by the CRON_SECRET bearer token
   //   /api/public/*   : verified by a per-request signed token (e.g. invoice PDF
   //                     links fetched by WaSenderApi)
+  //   /api/enroll/*   : verified by the one-time token in an enrollment link
   if (
     path.startsWith("/api/webhooks") ||
     path.startsWith("/api/cron") ||
-    path.startsWith("/api/public")
+    path.startsWith("/api/public") ||
+    path.startsWith("/api/enroll")
   ) {
     return NextResponse.next();
   }
+
+  // The enrollment page is reachable in either state: signed out is the
+  // normal case (a new phone), and signed in must not be bounced into the
+  // dashboard, because the person is there to replace what they hold.
+  if (path === "/enroll") return NextResponse.next();
 
   // Only the sign-in screen is reachable signed out. /account (passkeys and
   // password) belongs to whoever is signed in, so reaching it without a
@@ -108,13 +115,13 @@ export const config = {
   // the function above does not help: the session read has already happened by
   // then. It has to stay out of the matcher.
   //
-  // api/auth, api/cron, api/public and api/webhooks are excluded because the
-  // function above already waves all four straight through. Matching them only
+  // api/auth, api/cron, api/public, api/webhooks and api/enroll are excluded
+  // because the function above already waves all five straight through. Matching them only
   // bought an invocation that ran NextResponse.next() and nothing else, and on
   // Vercel middleware bills separately from the function behind it, so every
   // PDF fetch and every inbound WhatsApp webhook was paying twice for one
   // request. Behaviour is unchanged: they authorize themselves.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/auth|api/cron|api/public|api/webhooks|api/account/signout|.*\\.[\\w]+$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/auth|api/cron|api/public|api/webhooks|api/enroll|api/account/signout|.*\\.[\\w]+$).*)",
   ],
 };

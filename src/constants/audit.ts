@@ -32,6 +32,11 @@ export const AUDIT_ACTIONS = [
   // rather than "update", because "who threw this person off the till" is a
   // question someone asks of the log later and it should read as an answer.
   "signout",
+  // An admin issued a one-time enrollment link so this person can set up a
+  // passkey, and the person redeemed it. Two rows, same verb: the payload says
+  // which, and by which channel. "Who gave this person a way in" is the
+  // question the log has to answer later.
+  "enroll",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -133,4 +138,5 @@ export const AUDIT_ACTION_COLOR: Record<
   grant: "success",
   redeem: "success",
   signout: "warning",
+  enroll: "info",
 };

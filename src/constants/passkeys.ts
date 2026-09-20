@@ -15,6 +15,11 @@ export const PASSKEY_UNKNOWN_CODE = "unknown_passkey";
 export const PASSKEY_CHALLENGE_COOKIE = "passkey-challenge";
 export const PASSKEY_CHALLENGE_TTL_SECONDS = 120;
 
+// Enrollment links: how long one stays valid after an admin issues it. Long
+// enough to find the phone and open WhatsApp, short enough that a link left
+// in a chat is dead by the time anyone else reads it.
+export const ENROLLMENT_LINK_TTL_MINUTES = 15;
+
 // How long the browser waits for the person to finish with their phone or key
 // before giving up on a ceremony.
 export const PASSKEY_CEREMONY_TIMEOUT_MS = 60_000;

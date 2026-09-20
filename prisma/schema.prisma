@@ -71,6 +71,12 @@ model User {
   // to tell, per person, which door they are still using while passwords are
   // being phased out. Null once they never have, or never did.
   lastPasswordLoginAt DateTime? @map("last_password_login_at") @db.Timestamptz(6)
+  // A one-time link an admin issued so this person can set up a passkey:
+  // the SHA-256 of the token in the link (the token itself is never stored)
+  // and when it stops working. Cleared the moment it is used. Issuing a new
+  // one overwrites these, which is what revokes the previous link.
+  enrollmentTokenHash String?   @unique @map("enrollment_token_hash") @db.Char(64)
+  enrollmentExpiresAt DateTime? @map("enrollment_expires_at") @db.Timestamptz(6)
   // Sessions that began before this instant are refused. Set by an admin
   // signing this person out of every device; null means nothing was ever
   // revoked. Compared against the sign-in stamp carried in the JWT, never

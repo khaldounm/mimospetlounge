@@ -29,6 +29,7 @@ import {
 } from "@simplewebauthn/server";
 import type { NextResponse } from "next/server";
 import type { User as SessionUser } from "next-auth";
+import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sessionUserInclude, toSessionUser } from "@/lib/users";
 import { CLINIC } from "@/constants/clinic";
@@ -216,11 +217,14 @@ export async function registrationOptions(
 }
 
 // Verifies a registration response and stores the credential. Throws
-// PasskeyError when the browser's answer does not check out.
+// PasskeyError when the browser's answer does not check out. Takes the client
+// to write with, so the enrollment route can store the key inside the same
+// transaction that burns the link.
 export async function addPasskey(
   userId: number,
   response: RegistrationResponseJSON,
   expectedChallenge: string,
+  db: Pick<Prisma.TransactionClient, "userPasskey"> = prisma,
 ): Promise<PasskeyDTO> {
   const rp = relyingParty();
   let verification;
@@ -245,7 +249,7 @@ export async function addPasskey(
     verification.registrationInfo;
   const transports = credential.transports ?? [];
 
-  const row = await prisma.userPasskey.create({
+  const row = await db.userPasskey.create({
     data: {
       id: credential.id,
       userId,

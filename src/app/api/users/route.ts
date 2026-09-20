@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ApiError, handle, parseBody, requirePermission } from "@/lib/api";
 import { writeAudit } from "@/lib/audit";
-import { hashPassword, toUserDTO, userInclude } from "@/lib/users";
+import { toUserDTO, userInclude } from "@/lib/users";
 import { userCreateSchema } from "@/schemas/user";
 
 export async function GET(request: Request) {
@@ -54,6 +54,9 @@ export async function POST(request: Request) {
     if (existing)
       throw new ApiError(409, "A user with this email already exists");
 
+    // No password, ever. The row is created without one and the dialog's
+    // next step issues an enrollment link; until that link is used the
+    // account has no way in at all, which is the correct state for it.
     const user = await prisma.user.create({
       data: {
         firstName: data.firstName,
@@ -61,7 +64,6 @@ export async function POST(request: Request) {
         email: data.email,
         phone: data.phone,
         roleId: data.roleId,
-        passwordHash: await hashPassword(data.password),
       },
       include: userInclude,
     });
@@ -70,7 +72,6 @@ export async function POST(request: Request) {
       action: "create",
       entity: "user",
       entityId: user.userId,
-      // Never log the password or its hash.
       changes: {
         email: data.email,
         roleId: data.roleId,

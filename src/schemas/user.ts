@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { optionalString } from "./common";
 
-// Minimum password strength enforced for admin-set credentials.
+// Minimum password strength for the one place a password can still be set:
+// someone changing their own. New accounts get no password at all; they get
+// an enrollment link and a passkey (see lib/enrollment.ts).
 const password = z
   .string()
   .min(8, "Password must be at least 8 characters")
@@ -13,7 +15,6 @@ export const userCreateSchema = z.object({
   email: z.email("Invalid email").max(255),
   phone: optionalString(20),
   roleId: z.coerce.number().int().positive("Role is required"),
-  password,
 });
 
 // All fields optional on update; password is handled by its own endpoint.
@@ -31,8 +32,6 @@ export const userUpdateSchema = z
     message: "No fields to update",
   });
 
-export const passwordResetSchema = z.object({ password });
-
 // Someone changing their OWN password. The current one is proof of identity, so
 // it is required but deliberately not held to the strength rules: it was set
 // under whatever rules applied at the time, and rejecting it here would lock out
@@ -44,5 +43,4 @@ export const passwordChangeSchema = z.object({
 
 export type UserCreateInput = z.infer<typeof userCreateSchema>;
 export type UserUpdateInput = z.infer<typeof userUpdateSchema>;
-export type PasswordResetInput = z.infer<typeof passwordResetSchema>;
 export type PasswordChangeInput = z.infer<typeof passwordChangeSchema>;

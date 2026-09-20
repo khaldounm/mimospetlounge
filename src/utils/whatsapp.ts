@@ -130,3 +130,21 @@ export function clientStatementFileName(statement: ClientStatementDTO): string {
     .replace(/^-|-$/g, "");
   return `statement-${slug || statement.clientId}-${statement.asAt}.pdf`;
 }
+
+// The one message sent to a member of staff rather than a client: their
+// one-time link to set up a passkey. Plain words, the link on its own line so
+// WhatsApp makes it tappable, and the two facts that matter (once, minutes).
+export function enrollmentWhatsAppMessage(
+  firstName: string,
+  url: string,
+  ttlMinutes: number,
+): string {
+  return [
+    `Hi ${firstName}, here is your sign-in link for ${CLINIC.name}.`,
+    "Open it on this phone and follow the steps.",
+    "",
+    url,
+    "",
+    `It works once and expires in ${ttlMinutes} minutes.`,
+  ].join("\n");
+}

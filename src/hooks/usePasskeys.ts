@@ -158,3 +158,39 @@ export function usePasskeyRegistration() {
 
   return { phase, error, register };
 }
+
+// Redeeming an enrollment link: the same registration ceremony as
+// usePasskeyRegistration, but authorised by the token in the link instead of
+// a session, against the two /api/enroll routes.
+export function usePasskeyEnrollment(token: string) {
+  const [phase, setPhase] = useState<PasskeyPhase>("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  const enroll = useCallback(async (): Promise<PasskeyDTO | null> => {
+    setError(null);
+    setPhase("waiting");
+    try {
+      const options = await apiRequest<PublicKeyCredentialCreationOptionsJSON>(
+        "/api/enroll/options",
+        { method: "POST", body: { token } },
+      );
+      const response = await startRegistration({ optionsJSON: options });
+      setPhase("verifying");
+
+      const { passkey } = await apiRequest<{ passkey: PasskeyDTO }>(
+        "/api/enroll",
+        { method: "POST", body: { token, response } },
+      );
+      setPhase("done");
+      return passkey;
+    } catch (err) {
+      setPhase("idle");
+      if (!wasCancelled(err)) {
+        setError(describe(err, "Could not set up the passkey."));
+      }
+      return null;
+    }
+  }, [token]);
+
+  return { phase, error, enroll };
+}

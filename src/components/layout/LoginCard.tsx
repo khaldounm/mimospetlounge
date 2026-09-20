@@ -3,27 +3,16 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
-import {
-  Box,
-  Button,
-  Collapse,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
-import { useColorMode } from "@/components/ui/ThemeRegistry";
+import { Button, Collapse, Stack, TextField, Typography } from "@mui/material";
+import AuthFrame from "@/components/layout/AuthFrame";
 import PasskeySignInButton from "@/components/ui/PasskeySignInButton";
 import { usePasskeySupport } from "@/hooks/usePasskeys";
 import { CLINIC } from "@/constants/clinic";
 
-const LOGO_HEIGHT = { xs: 56, sm: 72 };
-
-// The sign-in screen. One column on the page ground, no card: the logo, a
-// caramel rule, a headline and one action. Passkeys lead; the password form
-// sits folded under a text link for anyone who has not moved yet, and opens
-// by itself in a browser that cannot do passkeys.
+// The sign-in screen: one action. Passkeys lead; the password form sits
+// folded under a text link for anyone who has not moved yet, and opens by
+// itself in a browser that cannot do passkeys.
 export default function LoginCard() {
-  const { mode } = useColorMode();
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/";
@@ -64,43 +53,7 @@ export default function LoginCard() {
   const passwordOpen = passkeys === false || showPassword;
 
   return (
-    <Stack
-      spacing={4}
-      sx={{
-        width: "100%",
-        maxWidth: 420,
-        animation: "loginFadeUp 220ms ease-out",
-        "@keyframes loginFadeUp": {
-          from: { opacity: 0, transform: "translateY(8px)" },
-          to: { opacity: 1, transform: "none" },
-        },
-      }}
-    >
-      <Stack spacing={3}>
-        <Box
-          component="img"
-          src={mode === "dark" ? CLINIC.logos.onDark : CLINIC.logos.onLight}
-          alt={CLINIC.name}
-          sx={{
-            height: LOGO_HEIGHT,
-            width: "auto",
-            maxWidth: "100%",
-            objectFit: "contain",
-            objectPosition: "left",
-            display: "block",
-          }}
-        />
-        <Box sx={{ width: 40, height: 2, bgcolor: "secondary.main" }} />
-        <Box>
-          <Typography variant="h2" component="h1">
-            Welcome back
-          </Typography>
-          <Typography color="text.secondary" sx={{ mt: 0.5 }}>
-            Sign in to {CLINIC.name}
-          </Typography>
-        </Box>
-      </Stack>
-
+    <AuthFrame title="Welcome back" subtitle={`Sign in to ${CLINIC.name}`}>
       <Stack spacing={2}>
         {passkeys && <PasskeySignInButton onSignedIn={enter} />}
 
@@ -155,10 +108,6 @@ export default function LoginCard() {
           </Stack>
         </Collapse>
       </Stack>
-
-      <Typography variant="caption" color="text.secondary">
-        {CLINIC.name}
-      </Typography>
-    </Stack>
+    </AuthFrame>
   );
 }
