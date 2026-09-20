@@ -50,4 +50,5 @@ export const MIMO: ClinicProfile = {
     // Off: "messages", the website contact form. Mimo has no website form.
   ],
   backupPrefix: "mimos",
+  passkeyOnly: false,
 };

@@ -1,13 +1,17 @@
 import { z } from "zod";
 import { optionalString } from "./common";
 
-// Minimum password strength for the one place a password can still be set:
-// someone changing their own. New accounts get no password at all; they get
-// an enrollment link and a passkey (see lib/enrollment.ts).
+// Minimum password strength, wherever one can still be set: someone changing
+// their own, or an admin setting one at a clinic that keeps passwords on
+// (CLINIC.passkeyOnly false). New accounts never get one here; they get an
+// enrollment link and a passkey (see lib/enrollment.ts).
 const password = z
   .string()
   .min(8, "Password must be at least 8 characters")
   .max(72);
+
+// An admin setting someone's password from the staff list.
+export const passwordSetSchema = z.object({ password });
 
 export const userCreateSchema = z.object({
   firstName: z.string().trim().min(1, "First name is required").max(100),
@@ -43,4 +47,5 @@ export const passwordChangeSchema = z.object({
 
 export type UserCreateInput = z.infer<typeof userCreateSchema>;
 export type UserUpdateInput = z.infer<typeof userUpdateSchema>;
+export type PasswordSetInput = z.infer<typeof passwordSetSchema>;
 export type PasswordChangeInput = z.infer<typeof passwordChangeSchema>;

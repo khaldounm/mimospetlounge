@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { listPasskeys } from "@/lib/passkeys";
 import ChangePasswordForm from "@/components/users/ChangePasswordForm";
 import PasskeyList from "@/components/ui/PasskeyList";
+import { PASSKEY_ONLY } from "@/constants/passkeys";
 
 // Your own account. Not gated by any permission: it belongs to whoever is
 // signed in, whatever their role. Passkeys and, for anyone still on one, the
@@ -31,7 +32,10 @@ export default async function AccountPage() {
       ])
     : [null, []];
 
-  const hasPassword = Boolean(user?.passwordHash);
+  // A stored hash only counts as a way in while passwords are on. At a
+  // passkey-only clinic it is inert, so the passkey list must treat the
+  // person as having no other door and refuse to remove their last passkey.
+  const hasPassword = !PASSKEY_ONLY && Boolean(user?.passwordHash);
 
   return (
     <Stack spacing={4}>

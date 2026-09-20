@@ -9,6 +9,12 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
+  async redirects() {
+    return [
+      // The account page used to live here; old bookmarks still do.
+      { source: "/reset-password", destination: "/account", permanent: true },
+    ];
+  },
   async headers() {
     return [
       {

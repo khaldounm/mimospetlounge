@@ -27,6 +27,8 @@ import { formatDateTime } from "@/utils/format";
 import type { RoleOption, UserDTO } from "@/types/entities";
 import UserFormDialog from "./UserFormDialog";
 import ResetAccessDialog from "@/components/ui/ResetAccessDialog";
+import SetPasswordDialog from "@/components/ui/SetPasswordDialog";
+import { PASSKEY_ONLY } from "@/constants/passkeys";
 
 interface Props {
   initialUsers: UserDTO[];
@@ -35,11 +37,18 @@ interface Props {
   canWrite: boolean;
 }
 
-// Which door this person last came through: a passkey, or a password. Two
-// states only, read like a checklist. Someone who holds a passkey but last
-// typed a password is still "Password": the question is what they use, not
-// what they own. Never signed in counts as Password until they do.
+// Two states only, read like a checklist.
+//
+// While passwords are on: which door this person last came through. Someone
+// who holds a passkey but last typed a password is still "Password": the
+// question is what they use, not what they own. Never signed in counts as
+// Password until they do.
+//
+// Passkey-only: there is no other door, so the question becomes whether they
+// hold one at all. "No passkey" means they cannot sign in until an admin
+// sends a link.
 function usesPasskey(user: UserDTO): boolean {
+  if (PASSKEY_ONLY) return user.passkeyCount > 0;
   const passkeyAt = user.lastPasskeyUsedAt;
   const passwordAt = user.lastPasswordLoginAt;
   if (!passkeyAt) return false;
@@ -54,7 +63,7 @@ function SignInChip({ user }: { user: UserDTO }) {
     <Chip
       size="small"
       icon={ok ? <CheckCircleRoundedIcon /> : <CancelRoundedIcon />}
-      label={ok ? "Passkey" : "Password"}
+      label={ok ? "Passkey" : PASSKEY_ONLY ? "No passkey" : "Password"}
       sx={(theme) => {
         const tone = ok ? theme.palette.success : theme.palette.error;
         return {
@@ -74,9 +83,10 @@ function passkeySummary(users: UserDTO[]): string {
   const active = users.filter((u) => u.isActive);
   if (active.length === 0) return "";
   const using = active.filter(usesPasskey).length;
+  const verb = PASSKEY_ONLY ? "have a passkey" : "sign in with a passkey";
   return using === active.length
-    ? `All ${active.length} staff sign in with a passkey.`
-    : `${using} of ${active.length} staff sign in with a passkey.`;
+    ? `All ${active.length} staff ${verb}.`
+    : `${using} of ${active.length} staff ${verb}.`;
 }
 
 export default function UsersTable({
@@ -91,6 +101,7 @@ export default function UsersTable({
   const [editing, setEditing] = useState<UserDTO | null>(null);
   const [resetUser, setResetUser] = useState<UserDTO | null>(null);
   const [resetIssued, setResetIssued] = useState(false);
+  const [passwordUser, setPasswordUser] = useState<UserDTO | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const firstRender = useRef(true);
@@ -264,6 +275,15 @@ export default function UsersTable({
                               Reset access
                             </Button>
                           </Tooltip>
+                          {!PASSKEY_ONLY && (
+                            <Button
+                              size="small"
+                              disabled={!u.isActive}
+                              onClick={() => setPasswordUser(u)}
+                            >
+                              Set password
+                            </Button>
+                          )}
                           <Tooltip
                             title={
                               isSelf
@@ -318,6 +338,12 @@ export default function UsersTable({
         roleOptions={roleOptions}
         isSelf={editing?.userId === currentUserId}
         onClose={() => setFormOpen(false)}
+        onSaved={() => void load(query)}
+      />
+      <SetPasswordDialog
+        open={passwordUser !== null}
+        user={passwordUser}
+        onClose={() => setPasswordUser(null)}
         onSaved={() => void load(query)}
       />
       <ResetAccessDialog

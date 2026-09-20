@@ -45,4 +45,5 @@ export const NADINE: ClinicProfile = {
     "messages", // the contact form on nadinesaidvetclinic.com posts here
   ],
   backupPrefix: "nadine",
+  passkeyOnly: false,
 };

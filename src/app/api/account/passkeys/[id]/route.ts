@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ApiError, handle, requireSession } from "@/lib/api";
 import { writeAudit } from "@/lib/audit";
+import { PASSKEY_ONLY } from "@/constants/passkeys";
 
 // Removes one of your own passkeys. The row is looked up by id AND the
 // session's user, so a body cannot name somebody else's key.
@@ -31,7 +32,9 @@ export async function DELETE(
         select: { passwordHash: true },
       }),
     ]);
-    if (remaining === 0 && !user?.passwordHash) {
+    // A stored hash is only a way in while passwords are on.
+    const hasPassword = !PASSKEY_ONLY && Boolean(user?.passwordHash);
+    if (remaining === 0 && !hasPassword) {
       throw new ApiError(
         400,
         "This is your only way to sign in. Add another passkey first.",

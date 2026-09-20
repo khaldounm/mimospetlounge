@@ -62,8 +62,21 @@ Staff sign in with a passkey on their own phone. Nobody is given a password:
 - Nobody can request a link from the sign-in screen; only `users:write` can
   issue one.
 
-Accounts that still have a password (from before passkeys) can keep using it
-until passwords are removed; no new password can be created or reset.
+**Passwords are per clinic: `passkeyOnly` in the clinic profile.**
+
+- `passkeyOnly: false` (both clinics today): accounts that still have a
+  password can sign in with it and change it on `/account`, and an admin can
+  **Set password** for someone from the staff list. New accounts still start
+  with a link, never a password.
+- `passkeyOnly: true`: the password provider is not registered, the password
+  routes return 404, and no password control renders anywhere. The login is
+  one button. Flip it only when every active member of staff shows green on
+  the staff list; anyone still on a password is locked out until an admin
+  sends them a link. Stored hashes are kept, so flipping back restores
+  password sign-in for whoever still has one.
+
+The flag is a build-time constant (`CLINIC.passkeyOnly`), so a flip is a
+one-line commit and a deploy, and reading it costs nothing at runtime.
 
 ## Migrations run in the build
 

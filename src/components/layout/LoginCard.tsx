@@ -8,10 +8,13 @@ import AuthFrame from "@/components/layout/AuthFrame";
 import PasskeySignInButton from "@/components/ui/PasskeySignInButton";
 import { usePasskeySupport } from "@/hooks/usePasskeys";
 import { CLINIC } from "@/constants/clinic";
+import { PASSKEY_ONLY } from "@/constants/passkeys";
 
-// The sign-in screen: one action. Passkeys lead; the password form sits
-// folded under a text link for anyone who has not moved yet, and opens by
-// itself in a browser that cannot do passkeys.
+// The sign-in screen: one action. Passkeys lead; at a clinic that keeps
+// passwords on, the password form sits folded under a text link for anyone
+// who has not moved yet, and opens by itself in a browser that cannot do
+// passkeys. At a passkey-only clinic there is no second door to show, and a
+// browser without passkeys is told to use one that has them.
 export default function LoginCard() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -50,14 +53,22 @@ export default function LoginCard() {
 
   // Until the browser has answered, nothing is offered: a button that appears
   // and then vanishes is worse than a beat of empty space.
-  const passwordOpen = passkeys === false || showPassword;
+  const passwords = !PASSKEY_ONLY;
+  const passwordOpen = passwords && (passkeys === false || showPassword);
 
   return (
     <AuthFrame title="Welcome back" subtitle={`Sign in to ${CLINIC.name}`}>
       <Stack spacing={2}>
         {passkeys && <PasskeySignInButton onSignedIn={enter} />}
 
-        {passkeys && (
+        {passkeys === false && !passwords && (
+          <Typography color="text.secondary">
+            This browser cannot use passkeys. Open the app in Chrome, Safari or
+            Edge, or on your phone.
+          </Typography>
+        )}
+
+        {passkeys && passwords && (
           <Button
             variant="text"
             size="small"

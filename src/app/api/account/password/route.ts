@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { ApiError, handle, parseBody, requireSession } from "@/lib/api";
+import {
+  ApiError,
+  handle,
+  parseBody,
+  requirePasswordsEnabled,
+  requireSession,
+} from "@/lib/api";
 import { writeAudit } from "@/lib/audit";
 import { hashPassword, verifyPassword } from "@/lib/users";
 import { passwordChangeSchema } from "@/schemas/user";
@@ -12,6 +18,7 @@ import { passwordChangeSchema } from "@/schemas/user";
 // and proves identity with the existing password first.
 export async function PATCH(request: Request) {
   return handle(async () => {
+    requirePasswordsEnabled();
     const session = await requireSession();
     // The id comes from the session, never from the request, so there is no
     // shape of body that changes somebody else's password.

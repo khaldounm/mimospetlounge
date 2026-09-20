@@ -1,5 +1,13 @@
-// Passkey (WebAuthn) settings shared by sign-in, the account page and, later,
+// Passkey (WebAuthn) settings shared by sign-in, the account page and
 // enrollment links.
+import { CLINIC } from "@/constants/clinic";
+
+// Whether this deployment accepts passkeys only. A build-time constant from
+// the clinic profile, inlined into the browser bundle: reading it costs
+// nothing anywhere. lib/auth.ts registers the password provider only when it
+// is false, the password routes 404 when it is true, and the UI follows.
+// Hiding the form alone would lock nothing; the provider is the lock.
+export const PASSKEY_ONLY = CLINIC.passkeyOnly;
 
 // Id of the Auth.js Credentials provider that verifies a passkey assertion.
 // The login page passes it to signIn(); lib/auth.ts registers it.

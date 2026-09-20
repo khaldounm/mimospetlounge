@@ -3,6 +3,7 @@ import type { ZodType } from "zod";
 import { liveSession } from "@/lib/session-user";
 import { hasPermission } from "@/lib/permissions";
 import type { Session } from "next-auth";
+import { PASSKEY_ONLY } from "@/constants/passkeys";
 
 // Thrown by guards to short-circuit a handler with a specific HTTP response.
 export class ApiError extends Error {
@@ -12,6 +13,13 @@ export class ApiError extends Error {
   ) {
     super(message);
   }
+}
+
+// Every route that reads or writes a password calls this first. At a
+// passkey-only clinic those routes do not exist as far as the outside can
+// tell: a 404, before any session or body is looked at.
+export function requirePasswordsEnabled(): void {
+  if (PASSKEY_ONLY) throw new ApiError(404, "Not found");
 }
 
 // Resolves the session and asserts nothing more. For the handful of endpoints

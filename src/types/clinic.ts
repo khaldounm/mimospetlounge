@@ -53,4 +53,12 @@ export interface ClinicProfile {
   // Filename prefix of database dumps, local and nightly, so two clinics'
   // backups can share a folder without being confused for one another.
   backupPrefix: string;
+  // Whether passkeys are the only way to sign in at this clinic. True removes
+  // the password sign-in provider, the password routes and every password
+  // control; false keeps them for accounts that still hold a password and
+  // lets an admin set one. Flip it only once every active member of staff
+  // shows green on the staff list, or whoever is left on a password is locked
+  // out until an admin sends them a link. Stored hashes are never dropped, so
+  // flipping back restores password sign-in for anyone who still has one.
+  passkeyOnly: boolean;
 }
