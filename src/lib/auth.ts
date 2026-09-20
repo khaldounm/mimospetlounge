@@ -3,11 +3,20 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { authConfig } from "./auth.config";
 import { prisma } from "./prisma";
+import { toSessionUser, userInclude } from "@/lib/users";
+import { readChallenge, verifyAssertion } from "@/lib/passkeys";
+import { PASSKEY_PROVIDER_ID } from "@/constants/passkeys";
+import { authenticationResponseSchema } from "@/schemas/passkey";
 
+// Two ways to prove who you are, one shape coming out. Both providers return
+// toSessionUser(), so the jwt callback in auth.config.ts stamps the same fields
+// whichever door someone came through, and nothing downstream can tell them
+// apart.
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
   providers: [
     Credentials({
+      id: "credentials",
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
@@ -22,13 +31,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // email column is citext → match is case-insensitive at the DB level.
         const user = await prisma.user.findUnique({
           where: { email },
-          include: {
-            role: {
-              include: {
-                rolePermissions: { include: { permission: true } },
-              },
-            },
-          },
+          include: userInclude,
         });
 
         if (!user || !user.passwordHash || !user.isActive) return null;
@@ -41,17 +44,40 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           data: { lastLoginAt: new Date() },
         });
 
-        return {
-          id: String(user.userId),
-          userId: user.userId,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          roleName: user.role.name,
-          permissions: user.role.rolePermissions.map(
-            (rp) => rp.permission.name,
-          ),
-        };
+        return toSessionUser(user);
+      },
+    }),
+
+    // A passkey assertion, verified against the challenge cookie that
+    // /api/auth/passkey/options set moments earlier. The response arrives as a
+    // JSON string because Credentials fields are strings; it is the object
+    // @simplewebauthn/browser's startAuthentication() resolved with.
+    Credentials({
+      id: PASSKEY_PROVIDER_ID,
+      name: "Passkey",
+      credentials: { response: { type: "text" } },
+      async authorize(credentials, request) {
+        const raw =
+          typeof credentials?.response === "string" ? credentials.response : "";
+        if (!raw) return null;
+
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          return null;
+        }
+        const response = authenticationResponseSchema.safeParse(parsed);
+        if (!response.success) return null;
+
+        const challenge = readChallenge(
+          request.headers.get("cookie"),
+          "authenticate",
+          null,
+        );
+        if (!challenge) return null;
+
+        return verifyAssertion(response.data, challenge);
       },
     }),
   ],

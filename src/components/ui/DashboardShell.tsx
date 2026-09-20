@@ -51,7 +51,7 @@ import { navTokens } from "./theme";
 
 // Your own account page. Not in NAV_MODULES: it has no permission of its own
 // and belongs to everyone, so it hangs off the name in the footer instead.
-const ACCOUNT_HREF = "/reset-password";
+const ACCOUNT_HREF = "/account";
 
 const DRAWER_WIDTH = 240;
 const COLLAPSED_WIDTH = 64;

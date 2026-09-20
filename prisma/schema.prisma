@@ -88,9 +88,45 @@ model User {
   registerClosings      RegisterClosing[]
   offersCreated         Offer[]                @relation("OfferCreatedBy")
   offersGranted         OfferGrant[]           @relation("OfferGrantedBy")
+  passkeys              UserPasskey[]
 
   @@index([roleId], map: "idx_users_role")
   @@map("users")
+}
+
+// A passkey (WebAuthn credential) belonging to one user. The private half lives
+// on the person's phone or security key and never reaches us; this row is the
+// public key and the bookkeeping needed to verify a sign-in with it.
+//
+// `id` is the credential id the authenticator minted, base64url. The sign-in
+// assertion carries it, so it is the primary key rather than a serial: one
+// lookup, no join, to find the key that signed.
+model UserPasskey {
+  id         String    @id
+  userId     Int       @map("user_id")
+  publicKey  Bytes     @map("public_key")
+  // Signature counter reported by the authenticator. Hardware keys increment it
+  // every use and a value that fails to grow means a cloned key; synced
+  // passkeys (iCloud, Google) always report 0.
+  counter    Int       @default(0)
+  // How the browser reached the authenticator when it was registered
+  // ("internal", "hybrid", "usb", ...). Handed back as a hint on later
+  // ceremonies so the browser can lead with the same route.
+  transports String[]  @default([])
+  // "singleDevice" (hardware key) or "multiDevice" (synced passkey), and
+  // whether the authenticator reports it as backed up to a cloud account.
+  deviceType String    @map("device_type") @db.VarChar(20)
+  backedUp   Boolean   @default(false) @map("backed_up")
+  // Authenticator model id, mapped to a provider name in the UI.
+  aaguid     String    @db.VarChar(36)
+  label      String    @db.VarChar(100)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_passkeys")
 }
 
 // ============================================================

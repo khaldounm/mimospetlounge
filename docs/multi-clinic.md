@@ -33,13 +33,18 @@ only the selected profile's paths are referenced.
 | `NEXT_PUBLIC_CLINIC_ID`                          | `mimo` or `nadine`                                                                         |
 | `DATABASE_URL`                                   | that clinic's transaction pooler (6543, `pgbouncer=true`)                                  |
 | `DIRECT_URL`                                     | that clinic's session pooler (5432); the build runs migrations through it                  |
-| `AUTH_SECRET`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL` | per clinic; the URL is that clinic's domain                                                |
+| `AUTH_SECRET`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL` | per clinic; the URL is that clinic's https domain and is also what passkeys are bound to   |
 | `CRON_SECRET`                                    | per clinic                                                                                 |
 | `WASENDER_API_KEY`                               | that clinic's own WhatsApp sender; the other clinic's key would send from the wrong number |
 | `FEATURES`                                       | optional override, normally unset                                                          |
 
 Vercel Bot Protection must carry the custom Bypass rule for the WhatsApp
 document fetch on every project, or document sends get a 429 challenge.
+
+Passkeys are registered against the origin in `NEXTAUTH_URL` (see
+`src/lib/passkeys.ts`), so it must be exactly the domain staff open, with the
+scheme. A passkey made on one clinic's domain does not work on another's, and
+a preview deployment on a different hostname cannot use passkeys at all.
 
 ## Migrations run in the build
 

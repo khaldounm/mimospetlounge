@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import type { User as SessionUser } from "next-auth";
 import { prisma } from "@/lib/prisma";
 import type { UserDTO } from "@/types/entities";
 
@@ -47,6 +48,29 @@ export function toUserDTO(u: UserRow): UserDTO {
     canManageUsers,
     lastLoginAt: u.lastLoginAt ? u.lastLoginAt.toISOString() : null,
     createdAt: u.createdAt.toISOString(),
+  };
+}
+
+// What a successful sign-in hands Auth.js, whichever way the person proved who
+// they are (password today, passkey too). The jwt callback copies these fields
+// onto the token, so the two providers must agree on the shape or one of them
+// mints a half-populated session.
+type SessionUserRow = Pick<
+  UserRow,
+  "userId" | "email" | "firstName" | "lastName"
+> & {
+  role: { name: string; rolePermissions: { permission: { name: string } }[] };
+};
+
+export function toSessionUser(u: SessionUserRow): SessionUser {
+  return {
+    id: String(u.userId),
+    userId: u.userId,
+    email: u.email,
+    firstName: u.firstName,
+    lastName: u.lastName,
+    roleName: u.role.name,
+    permissions: u.role.rolePermissions.map((rp) => rp.permission.name),
   };
 }
 
