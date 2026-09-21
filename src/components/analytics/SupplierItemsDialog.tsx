@@ -605,14 +605,12 @@ function ItemLines({
                             maxUnits={data ? supplierMaxUnits(data) : 0}
                             wholeUnits={totals.units}
                           />
+                          {/* No summary beside the label: the note under
+                              the table already says how many did not sell. */}
                           <GroupRow
                             variant="total"
                             label={`All ${totals.items} products that sold`}
-                            summary={
-                              totals.unsoldItems > 0
-                                ? `${totals.unsoldItems} did not sell`
-                                : ""
-                            }
+                            summary=""
                             units={totals.units}
                             revenue={totals.revenue}
                             maxUnits={data ? supplierMaxUnits(data) : 0}
