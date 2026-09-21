@@ -46,18 +46,35 @@ export const CATEGORY_TOP_LIMIT = 15;
 export const SUPPLIER_ITEM_ORDERS = ["top", "bottom"] as const;
 export type SupplierItemOrder = (typeof SUPPLIER_ITEM_ORDERS)[number];
 
-// What each list is called: on the button that opens it, in its title, and on
-// the PDF it is saved as.
-export const SUPPLIER_ITEM_ORDER_LABELS: Record<SupplierItemOrder, string> = {
-  top: "Best sellers",
-  bottom: "Slow sellers",
+// What a list is ranked on: units moved, or money billed. Units is what the
+// card's buttons open on, since it is what the slow list is for (dropping
+// what does not move); revenue is one flip away inside the dialog.
+export const SUPPLIER_ITEM_MEASURES = ["units", "revenue"] as const;
+export type SupplierItemMeasure = (typeof SUPPLIER_ITEM_MEASURES)[number];
+
+export const SUPPLIER_ITEM_MEASURE_LABELS: Record<SupplierItemMeasure, string> =
+  {
+    units: "Units",
+    revenue: "Revenue",
+  };
+
+// What each list is called, per measure: on the button that opens it, in its
+// title, and on the PDF it is saved as.
+export const SUPPLIER_ITEM_ORDER_LABELS: Record<
+  SupplierItemMeasure,
+  Record<SupplierItemOrder, string>
+> = {
+  units: { top: "Best sellers", bottom: "Slow sellers" },
+  revenue: { top: "Top earners", bottom: "Low earners" },
 };
 
-// How many lines either list shows: fifteen in each category, and fifteen
-// across the supplier. Ranked and cut in the database per category; the
-// supplier-wide fifteen is a merge of those in the browser, since a product
-// in the supplier's top fifteen is in its category's top fifteen by
-// necessity, and the same holds at the bottom.
+// How many lines a list shows: fifteen in each category, and fifteen across
+// the supplier. Ranked and cut in the database per category, on units and on
+// revenue in the same pass, so the reply carries the union of the two and
+// either ranking is a sort in the browser. The supplier-wide fifteen is a
+// merge of the per-category rows, since a product in the supplier's top
+// fifteen is in its category's top fifteen by necessity, and the same holds
+// at the bottom.
 export const SUPPLIER_ITEMS_LIMIT = 15;
 
 // The two ways the dialog lays the same reply out: grouped under the

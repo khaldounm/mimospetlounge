@@ -28,22 +28,28 @@ import VisibilityIcon from "@mui/icons-material/Visibility";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import { useSupplierItemLines } from "@/hooks/useSupplierItemLines";
 import {
+  SUPPLIER_ITEM_MEASURES,
+  SUPPLIER_ITEM_MEASURE_LABELS,
   SUPPLIER_ITEM_ORDER_LABELS,
   SUPPLIER_ITEM_VIEWS,
   SUPPLIER_ITEM_VIEW_LABELS,
+  type SupplierItemMeasure,
   type SupplierItemOrder,
   type SupplierItemView,
 } from "@/constants/analytics";
 import { formatShare, formatUnits } from "@/utils/format";
 import {
+  categoryMax,
   categoryNote,
   flatLines,
   flatNote,
+  measureOf,
+  rankedLines,
   shareOf,
   soldSummary,
+  sortedCategories,
   supplierItemsCaption,
   supplierItemsFileName,
-  supplierMaxUnits,
   supplierNote,
   supplierTotals,
 } from "@/utils/supplier-items";
@@ -87,11 +93,13 @@ interface Props {
 function DownloadPdf({
   target,
   view,
+  measure,
   range,
   data,
 }: {
   target: SupplierItemsTarget;
   view: SupplierItemView;
+  measure: SupplierItemMeasure;
   range: AnalyticsRange;
   data: SupplierItemLines | null;
 }) {
@@ -114,6 +122,7 @@ function DownloadPdf({
           supplier={target.supplier}
           order={target.order}
           view={view}
+          measure={measure}
           range={range}
           data={data}
           generatedAt={new Date().toISOString()}
@@ -126,6 +135,7 @@ function DownloadPdf({
         target.supplier,
         target.order,
         view,
+        measure,
         range,
       );
       document.body.appendChild(link);
@@ -258,28 +268,31 @@ function CategoryPill({
 function CategoryPills({
   categories,
   totals,
+  measure,
   value,
   onChange,
 }: {
   categories: SupplierItemCategory[];
   totals: ReturnType<typeof supplierTotals>;
+  measure: SupplierItemMeasure;
   value: string;
   onChange: (category: string) => void;
 }) {
+  const whole = measureOf(totals, measure);
   return (
     <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mb: 2 }}>
       {categories.map((c) => (
         <CategoryPill
           key={c.category}
           label={c.category}
-          share={shareOf(c.total.units, totals.units)}
+          share={shareOf(measureOf(c.total, measure), whole)}
           selected={value === c.category}
           onSelect={() => onChange(c.category)}
         />
       ))}
       <CategoryPill
         label="All categories"
-        share={totals.units > 0 ? 100 : null}
+        share={whole > 0 ? 100 : null}
         selected={value === ALL_CATEGORIES}
         onSelect={() => onChange(ALL_CATEGORIES)}
       />
@@ -304,16 +317,18 @@ export default function SupplierItemsDialog({ target, range, onClose }: Props) {
 }
 
 // The ranked rows of one list, whichever list it is: a bar filled against
-// the best seller of the group and a share of the group's units, where the
-// group is a category or the whole supplier.
+// the best of the group on the measure and a share of the group's total on
+// it, where the group is a category or the whole supplier.
 function LineRows({
   lines,
-  maxUnits,
-  wholeUnits,
+  measure,
+  max,
+  whole,
 }: {
   lines: SupplierItemLine[];
-  maxUnits: number;
-  wholeUnits: number;
+  measure: SupplierItemMeasure;
+  max: number;
+  whole: number;
 }) {
   return lines.map((line, index) => (
     <TableRow
@@ -344,9 +359,9 @@ function LineRows({
         sx={{ width: SHARE_COLUMN_WIDTH, minWidth: SHARE_COLUMN_WIDTH }}
       >
         <ShareBar
-          value={line.units}
-          max={maxUnits}
-          share={shareOf(line.units, wholeUnits)}
+          value={measureOf(line, measure)}
+          max={max}
+          share={shareOf(measureOf(line, measure), whole)}
         />
       </TableCell>
       <TableCell align="right">{money(line.revenue)}</TableCell>
@@ -356,13 +371,14 @@ function LineRows({
 
 // A group's own line: a category above its products, or the supplier under
 // every category. Bold, with what it sold and how many of its products moved
-// beside the name; its bar is its share against `maxUnits`.
+// beside the name; its bar is `value` against `max` on the measure showing.
 function GroupRow({
   label,
   summary,
   units,
   revenue,
-  maxUnits,
+  value,
+  max,
   share,
   variant,
 }: {
@@ -370,7 +386,8 @@ function GroupRow({
   summary: string;
   units: number;
   revenue: number;
-  maxUnits: number;
+  value: number;
+  max: number;
   share: number | null;
   // A band sits above what it introduces; a total sits under what adds up
   // to it, drawn as a rule rather than a tint so it reads as the line the
@@ -418,7 +435,7 @@ function GroupRow({
       </TableCell>
       <TableCell align="right">{formatUnits(units)}</TableCell>
       <TableCell sx={{ minWidth: SHARE_COLUMN_WIDTH }}>
-        <ShareBar value={units} max={maxUnits} share={share} />
+        <ShareBar value={value} max={max} share={share} />
       </TableCell>
       <TableCell align="right">{money(revenue)}</TableCell>
     </TableRow>
@@ -439,20 +456,42 @@ function ItemLines({
   // same reply either way: the flat fifteen is a merge of the per-category
   // rows, so switching costs nothing.
   const [view, setView] = useState<SupplierItemView>("category");
+  // Units moved or money billed. The reply holds each category's fifteen on
+  // both, so flipping is a sort here, never a request.
+  const [measure, setMeasure] = useState<SupplierItemMeasure>("units");
   // Null until a pill is picked: the dialog opens on the first category,
   // which is the one that sold most on the best sellers and least on the
   // slow sellers, so there is a list on screen from the first paint.
   const [picked, setPicked] = useState<string | null>(null);
 
   const totals = data ? supplierTotals(data) : null;
+  // The supplier's best seller or earner, which the flat list's bars are
+  // drawn against; and the biggest category, for the band rows' bars.
+  const wholeMax = totals
+    ? measure === "units"
+      ? totals.maxLineUnits
+      : totals.maxLineRevenue
+    : 0;
+  const categoriesMax = totals
+    ? measure === "units"
+      ? totals.maxUnits
+      : totals.maxRevenue
+    : 0;
+  // Categories in the list's direction on the measure, so the pills and the
+  // grouped table read biggest (or smallest) first whichever way it is
+  // ranked, and the dialog opens on the first of them.
+  const ordered = data ? sortedCategories(data, measure) : [];
   // One category needs no pills and no supplier line: the category is the
   // whole of it.
-  const grouped = (data?.categories.length ?? 0) > 1;
-  const category = picked ?? data?.categories[0]?.category ?? ALL_CATEGORIES;
+  const grouped = ordered.length > 1;
+  const category = picked ?? ordered[0]?.category ?? ALL_CATEGORIES;
   const showingAll = !grouped || category === ALL_CATEGORIES;
-  const shown =
-    data?.categories.filter((c) => showingAll || c.category === category) ?? [];
-  const flat = data && view === "item" ? flatLines(data) : [];
+  const shown = data
+    ? ordered
+        .filter((c) => showingAll || c.category === category)
+        .map((c) => ({ cat: c, lines: rankedLines(c, measure, data.order) }))
+    : [];
+  const flat = data && view === "item" ? flatLines(data, measure) : [];
 
   // Under the table. By item: how much of the supplier the list covers and
   // how many products sold nothing. By category, across every category: how
@@ -460,10 +499,11 @@ function ItemLines({
   // covers, the band row already saying how many of its products moved.
   const note = data
     ? view === "item"
-      ? flatNote(data, flat)
+      ? flatNote(data, flat, measure)
       : showingAll
         ? supplierNote(data)
-        : (shown[0] && categoryNote(shown[0])) || null
+        : (shown[0] && categoryNote(shown[0].cat, shown[0].lines, measure)) ||
+          null
     : null;
 
   return (
@@ -476,10 +516,16 @@ function ItemLines({
           color="text.secondary"
           sx={{ ml: 1 }}
         >
-          {SUPPLIER_ITEM_ORDER_LABELS[target.order]}
+          {SUPPLIER_ITEM_ORDER_LABELS[measure][target.order]}
         </Typography>
         <Box sx={{ position: "absolute", right: 8, top: 8 }}>
-          <DownloadPdf target={target} view={view} range={range} data={data} />
+          <DownloadPdf
+            target={target}
+            view={view}
+            measure={measure}
+            range={range}
+            data={data}
+          />
           <IconButton aria-label="Close" onClick={onClose}>
             <CloseIcon />
           </IconButton>
@@ -497,27 +543,44 @@ function ItemLines({
           }}
         >
           <Typography variant="body2" color="text.secondary">
-            {supplierItemsCaption(target.order, view, range)}
+            {supplierItemsCaption(target.order, view, measure, range)}
           </Typography>
-          {/* Offered only once there are categories to group by: with one,
-              the two layouts are the same table. */}
-          {grouped && (
+          <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+            {/* Offered only once there are categories to group by: with
+                one, the two layouts are the same table. */}
+            {grouped && (
+              <ToggleButtonGroup
+                size="small"
+                exclusive
+                value={view}
+                onChange={(_e, next: SupplierItemView | null) => {
+                  if (next) setView(next);
+                }}
+                aria-label="Layout"
+              >
+                {SUPPLIER_ITEM_VIEWS.map((v) => (
+                  <ToggleButton key={v} value={v} sx={{ px: 1.5, py: 0.5 }}>
+                    {SUPPLIER_ITEM_VIEW_LABELS[v]}
+                  </ToggleButton>
+                ))}
+              </ToggleButtonGroup>
+            )}
             <ToggleButtonGroup
               size="small"
               exclusive
-              value={view}
-              onChange={(_e, next: SupplierItemView | null) => {
-                if (next) setView(next);
+              value={measure}
+              onChange={(_e, next: SupplierItemMeasure | null) => {
+                if (next) setMeasure(next);
               }}
-              aria-label="Layout"
+              aria-label="Ranked on"
             >
-              {SUPPLIER_ITEM_VIEWS.map((v) => (
-                <ToggleButton key={v} value={v} sx={{ px: 1.5, py: 0.5 }}>
-                  {SUPPLIER_ITEM_VIEW_LABELS[v]}
+              {SUPPLIER_ITEM_MEASURES.map((m) => (
+                <ToggleButton key={m} value={m} sx={{ px: 1.5, py: 0.5 }}>
+                  {SUPPLIER_ITEM_MEASURE_LABELS[m]}
                 </ToggleButton>
               ))}
             </ToggleButtonGroup>
-          )}
+          </Box>
         </Box>
 
         {error && (
@@ -559,8 +622,9 @@ function ItemLines({
               <Box>
                 {data && grouped && totals && view === "category" && (
                   <CategoryPills
-                    categories={data.categories}
+                    categories={ordered}
                     totals={totals}
+                    measure={measure}
                     value={category}
                     onChange={setPicked}
                   />
@@ -602,8 +666,9 @@ function ItemLines({
                         <>
                           <LineRows
                             lines={flat}
-                            maxUnits={data ? supplierMaxUnits(data) : 0}
-                            wholeUnits={totals.units}
+                            measure={measure}
+                            max={wholeMax}
+                            whole={measureOf(totals, measure)}
                           />
                           {/* No summary beside the label: the note under
                               the table already says how many did not sell. */}
@@ -613,15 +678,16 @@ function ItemLines({
                             summary=""
                             units={totals.units}
                             revenue={totals.revenue}
-                            maxUnits={data ? supplierMaxUnits(data) : 0}
-                            share={totals.units > 0 ? 100 : null}
+                            value={wholeMax}
+                            max={wholeMax}
+                            share={measureOf(totals, measure) > 0 ? 100 : null}
                           />
                         </>
                       )}
 
                       {totals &&
                         view === "category" &&
-                        shown.map((cat) => (
+                        shown.map(({ cat, lines }) => (
                           <Fragment key={cat.category}>
                             {/* The category's own line, which its products
                                 are measured against: their bars fill to its
@@ -637,8 +703,12 @@ function ItemLines({
                               )}
                               units={cat.total.units}
                               revenue={cat.total.revenue}
-                              maxUnits={totals.maxUnits}
-                              share={shareOf(cat.total.units, totals.units)}
+                              value={measureOf(cat.total, measure)}
+                              max={categoriesMax}
+                              share={shareOf(
+                                measureOf(cat.total, measure),
+                                measureOf(totals, measure),
+                              )}
                             />
 
                             {cat.lines.length === 0 && (
@@ -654,9 +724,10 @@ function ItemLines({
                             )}
 
                             <LineRows
-                              lines={cat.lines}
-                              maxUnits={cat.total.maxUnits}
-                              wholeUnits={cat.total.units}
+                              lines={lines}
+                              measure={measure}
+                              max={categoryMax(cat, measure)}
+                              whole={measureOf(cat.total, measure)}
                             />
                           </Fragment>
                         ))}
@@ -674,8 +745,9 @@ function ItemLines({
                             )}
                             units={totals.units}
                             revenue={totals.revenue}
-                            maxUnits={totals.maxUnits}
-                            share={totals.units > 0 ? 100 : null}
+                            value={categoriesMax}
+                            max={categoriesMax}
+                            share={measureOf(totals, measure) > 0 ? 100 : null}
                           />
                         )}
                     </TableBody>

@@ -9,6 +9,7 @@ import {
 import { CLINIC } from "@/constants/clinic";
 import {
   SUPPLIER_ITEM_ORDER_LABELS,
+  type SupplierItemMeasure,
   type SupplierItemOrder,
   type SupplierItemView,
 } from "@/constants/analytics";
@@ -20,13 +21,16 @@ import {
 } from "@/utils/format";
 import { formatRangeLabel } from "@/utils/date-range";
 import {
+  categoryMax,
   categoryNote,
   flatLines,
   flatNote,
+  measureOf,
+  rankedLines,
   shareOf,
   soldSummary,
+  sortedCategories,
   supplierItemsCaption,
-  supplierMaxUnits,
   supplierNote,
   supplierTotals,
 } from "@/utils/supplier-items";
@@ -210,16 +214,19 @@ function ShareCell({
   );
 }
 
-// The ranked rows of one list: bars against the best seller of the group,
-// shares of the group's units, the group being a category or the supplier.
+// The ranked rows of one list: bars against the best of the group on the
+// measure, shares of the group's total on it, the group being a category or
+// the supplier.
 function Lines({
   lines,
-  maxUnits,
-  wholeUnits,
+  measure,
+  max,
+  whole,
 }: {
   lines: SupplierItemLine[];
-  maxUnits: number;
-  wholeUnits: number;
+  measure: SupplierItemMeasure;
+  max: number;
+  whole: number;
 }) {
   return lines.map((line, i) => (
     <View key={line.itemId} style={styles.row} wrap={false}>
@@ -228,9 +235,9 @@ function Lines({
       <Text style={styles.colUnits}>{formatUnits(line.units)}</Text>
       <View style={styles.colShare}>
         <ShareCell
-          units={line.units}
-          max={maxUnits}
-          share={shareOf(line.units, wholeUnits)}
+          units={measureOf(line, measure)}
+          max={max}
+          share={shareOf(measureOf(line, measure), whole)}
         />
       </View>
       <Text style={styles.colBilled}>{formatMoney(line.revenue)}</Text>
@@ -242,6 +249,7 @@ export default function SupplierItemsPdfDocument({
   supplier,
   order,
   view,
+  measure,
   range,
   data,
   generatedAt,
@@ -250,6 +258,7 @@ export default function SupplierItemsPdfDocument({
   supplier: SupplierOption;
   order: SupplierItemOrder;
   view: SupplierItemView;
+  measure: SupplierItemMeasure;
   range: AnalyticsRange;
   data: SupplierItemLines;
   // When the file was made, as an ISO string, so the same report pulled twice
@@ -257,11 +266,18 @@ export default function SupplierItemsPdfDocument({
   generatedAt: string;
   logoSrc?: string;
 }) {
-  const label = SUPPLIER_ITEM_ORDER_LABELS[order];
+  const label = SUPPLIER_ITEM_ORDER_LABELS[measure][order];
   const address = CLINIC.addressLines.filter(Boolean);
   const totals = supplierTotals(data);
-  const flat = view === "item" ? flatLines(data) : [];
-  const note = view === "item" ? flatNote(data, flat) : supplierNote(data);
+  // The supplier's best seller or earner, for the flat list's bars, and the
+  // biggest category, for the band rows'.
+  const wholeMax =
+    measure === "units" ? totals.maxLineUnits : totals.maxLineRevenue;
+  const categoriesMax =
+    measure === "units" ? totals.maxUnits : totals.maxRevenue;
+  const flat = view === "item" ? flatLines(data, measure) : [];
+  const note =
+    view === "item" ? flatNote(data, flat, measure) : supplierNote(data);
 
   return (
     <Document title={`${label} - ${supplier.name}`} author={CLINIC.name}>
@@ -307,7 +323,7 @@ export default function SupplierItemsPdfDocument({
           <Text style={styles.sectionLabel}>Supplier</Text>
           <Text style={styles.supplierName}>{supplier.name}</Text>
           <Text style={styles.muted}>
-            {supplierItemsCaption(order, view, range)}
+            {supplierItemsCaption(order, view, measure, range)}
           </Text>
         </View>
 
@@ -340,25 +356,23 @@ export default function SupplierItemsPdfDocument({
             )}
             <Lines
               lines={flat}
-              maxUnits={supplierMaxUnits(data)}
-              wholeUnits={totals.units}
+              measure={measure}
+              max={wholeMax}
+              whole={measureOf(totals, measure)}
             />
             <View style={styles.totalRow} wrap={false}>
               <Text style={styles.colRank} />
+              {/* No summary beside the label: the note under the table
+                  already says how many did not sell. */}
               <Text style={styles.colName}>
                 {`All ${totals.items} products that sold`}
-                {totals.unsoldItems > 0 && (
-                  <Text style={styles.bandSummary}>
-                    {`   ${totals.unsoldItems} did not sell`}
-                  </Text>
-                )}
               </Text>
               <Text style={styles.colUnits}>{formatUnits(totals.units)}</Text>
               <View style={styles.colShare}>
                 <ShareCell
-                  units={supplierMaxUnits(data)}
-                  max={supplierMaxUnits(data)}
-                  share={totals.units > 0 ? 100 : null}
+                  units={wholeMax}
+                  max={wholeMax}
+                  share={measureOf(totals, measure) > 0 ? 100 : null}
                 />
               </View>
               <Text style={styles.colBilled}>
@@ -369,8 +383,9 @@ export default function SupplierItemsPdfDocument({
         )}
 
         {view === "category" &&
-          data.categories.map((cat) => {
-            const note = categoryNote(cat);
+          sortedCategories(data, measure).map((cat) => {
+            const lines = rankedLines(cat, measure, order);
+            const note = categoryNote(cat, lines, measure);
             return (
               <View key={cat.category}>
                 {/* A band is never left alone at the foot of a page: it moves
@@ -388,9 +403,12 @@ export default function SupplierItemsPdfDocument({
                   </Text>
                   <View style={styles.colShare}>
                     <ShareCell
-                      units={cat.total.units}
-                      max={totals.maxUnits}
-                      share={shareOf(cat.total.units, totals.units)}
+                      units={measureOf(cat.total, measure)}
+                      max={categoriesMax}
+                      share={shareOf(
+                        measureOf(cat.total, measure),
+                        measureOf(totals, measure),
+                      )}
                     />
                   </View>
                   <Text style={styles.colBilled}>
@@ -405,9 +423,10 @@ export default function SupplierItemsPdfDocument({
                 )}
 
                 <Lines
-                  lines={cat.lines}
-                  maxUnits={cat.total.maxUnits}
-                  wholeUnits={cat.total.units}
+                  lines={lines}
+                  measure={measure}
+                  max={categoryMax(cat, measure)}
+                  whole={measureOf(cat.total, measure)}
                 />
 
                 {note && <Text style={styles.categoryNote}>{note}</Text>}
@@ -427,9 +446,9 @@ export default function SupplierItemsPdfDocument({
             <Text style={styles.colUnits}>{formatUnits(totals.units)}</Text>
             <View style={styles.colShare}>
               <ShareCell
-                units={totals.maxUnits}
-                max={totals.maxUnits}
-                share={totals.units > 0 ? 100 : null}
+                units={categoriesMax}
+                max={categoriesMax}
+                share={measureOf(totals, measure) > 0 ? 100 : null}
               />
             </View>
             <Text style={styles.colBilled}>{formatMoney(totals.revenue)}</Text>
@@ -443,8 +462,8 @@ export default function SupplierItemsPdfDocument({
           not counted. A product is this supplier&apos;s when it is filed under
           them as its usual supplier
           {view === "category"
-            ? ", and its share is of the category it sits in; a category's share is of the supplier."
-            : ", and its share is of every unit the supplier's products sold."}
+            ? `, and its share is of the ${measure === "units" ? "units" : "revenue"} of the category it sits in; a category's share is of the supplier.`
+            : `, and its share is of everything the supplier's products ${measure === "units" ? "sold" : "billed"}.`}
         </Text>
 
         <Text style={styles.footer}>

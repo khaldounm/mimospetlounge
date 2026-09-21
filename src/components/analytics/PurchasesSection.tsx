@@ -184,7 +184,7 @@ export default function PurchasesSection({
                     setItemsTarget({ supplier: pickedSupplier, order: "top" })
                   }
                 >
-                  {SUPPLIER_ITEM_ORDER_LABELS.top}
+                  {SUPPLIER_ITEM_ORDER_LABELS.units.top}
                 </Button>
                 <Button
                   variant="contained"
@@ -200,7 +200,7 @@ export default function PurchasesSection({
                     })
                   }
                 >
-                  {SUPPLIER_ITEM_ORDER_LABELS.bottom}
+                  {SUPPLIER_ITEM_ORDER_LABELS.units.bottom}
                 </Button>
               </Stack>
             </ChartCard>

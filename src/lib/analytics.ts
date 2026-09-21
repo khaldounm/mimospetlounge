@@ -1895,6 +1895,7 @@ type SupplierItemRow = {
   total_units: Prisma.Decimal;
   total_revenue: Prisma.Decimal;
   max_units: Prisma.Decimal;
+  max_revenue: Prisma.Decimal;
   sold_items: bigint;
   unsold_items: bigint;
   item_id: number | null;
@@ -1907,20 +1908,23 @@ const thousandths = (value: Prisma.Decimal | null | undefined) =>
   Math.round((value?.toNumber() ?? 0) * 1000) / 1000;
 
 /**
- * One supplier's products ranked on net units sold over the window, within
- * each of their categories: the fifteen that sold the most in each, or the
- * fifteen that sold the fewest. Read off the invoice lines under the same
- * rules as the category dialog (traded invoices, hidden lines out, returns
- * net off), over the products filed under the supplier through
+ * One supplier's products ranked over the window, within each of their
+ * categories: the fifteen that sold the most in each, or the fifteen that
+ * sold the fewest, on units and on revenue alike. Read off the invoice lines
+ * under the same rules as the category dialog (traded invoices, hidden lines
+ * out, returns net off), over the products filed under the supplier through
  * InventoryItem.supplierId.
  *
- * Ranked and cut in the database: a window numbers each product inside its
- * category, and the category totals join onto the rows, so the biggest
- * supplier's year of lines comes back as at most fifteen rows per category
- * and one row of totals each, never every product it sold. The supplier-wide
- * figures are sums of those and are added up in the browser. The direction is
- * a multiplier rather than a SQL fragment: one prepared statement serves both
- * lists, and nothing from the request is ever spliced into the query text.
+ * Ranked and cut in the database: two windows number each product inside its
+ * category, once on units and once on revenue, and a row comes back when it
+ * makes either top fifteen, with the category totals joined on. So the
+ * biggest supplier's year of lines comes back as at most thirty rows per
+ * category (usually far fewer, the two rankings overlap) and one row of
+ * totals each, never every product it sold, and flipping the measure in the
+ * browser is a sort rather than a request. The supplier-wide figures are sums
+ * of those and are added up in the browser. The direction is a multiplier
+ * rather than a SQL fragment: one prepared statement serves both lists, and
+ * nothing from the request is ever spliced into the query text.
  *
  * A category with products on the books but no sale in the window still
  * comes back, with its unsold count and no lines: on the slow sellers, a
@@ -1956,7 +1960,11 @@ export async function getSupplierItemLines(
              ROW_NUMBER() OVER (
                PARTITION BY category
                ORDER BY units * ${sign}::int, revenue * ${sign}::int, name
-             ) AS rank
+             ) AS rank_units,
+             ROW_NUMBER() OVER (
+               PARTITION BY category
+               ORDER BY revenue * ${sign}::int, units * ${sign}::int, name
+             ) AS rank_revenue
       FROM sold
     ),
     -- Products still on the books that did not sell at all, per category.
@@ -1976,27 +1984,33 @@ export async function getSupplierItemLines(
       SELECT COALESCE(s.category, x.category) AS category,
              COALESCE(s.units, 0)     AS total_units,
              COALESCE(s.revenue, 0)   AS total_revenue,
-             COALESCE(s.max_units, 0) AS max_units,
+             COALESCE(s.max_units, 0)   AS max_units,
+             COALESCE(s.max_revenue, 0) AS max_revenue,
              COALESCE(s.items, 0)     AS sold_items,
              COALESCE(x.unsold_items, 0) AS unsold_items
       FROM (
         SELECT category,
                SUM(units) AS units, SUM(revenue) AS revenue,
-               MAX(units) AS max_units, COUNT(*) AS items
+               MAX(units) AS max_units, MAX(revenue) AS max_revenue,
+               COUNT(*) AS items
         FROM sold
         GROUP BY category
       ) s
       FULL OUTER JOIN unsold x ON x.category = s.category
     )
     SELECT c.category, c.total_units, c.total_revenue, c.max_units,
-           c.sold_items, c.unsold_items,
+           c.max_revenue, c.sold_items, c.unsold_items,
            r.item_id, r.name, r.units, r.revenue
     FROM categories c
     LEFT JOIN ranked r
-      ON r.category = c.category AND r.rank <= ${SUPPLIER_ITEMS_LIMIT}
-    ORDER BY c.total_units * ${sign}::int, c.category, r.rank`;
+      ON r.category = c.category
+     AND (r.rank_units <= ${SUPPLIER_ITEMS_LIMIT}
+          OR r.rank_revenue <= ${SUPPLIER_ITEMS_LIMIT})
+    ORDER BY c.category, r.rank_units`;
 
-  // Rows arrive grouped by category, each category's lines in rank order.
+  // Rows arrive grouped by category. Neither the categories nor the lines
+  // are in any order that matters: the browser sorts both on the measure it
+  // is showing.
   const categories: SupplierItemCategory[] = [];
   for (const r of rows) {
     let current = categories[categories.length - 1];
@@ -2008,6 +2022,7 @@ export async function getSupplierItemLines(
           revenue: round2(r.total_revenue.toNumber()),
           items: Number(r.sold_items),
           maxUnits: thousandths(r.max_units),
+          maxRevenue: round2(r.max_revenue.toNumber()),
         },
         unsoldItems: Number(r.unsold_items),
         lines: [],

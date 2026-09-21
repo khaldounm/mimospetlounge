@@ -840,22 +840,28 @@ export interface SupplierItemCategory {
     units: number;
     revenue: number;
     items: number; // distinct products with at least one line in the range
-    maxUnits: number; // the category's best seller, which its bars are drawn against
+    // The category's best seller and best earner, which its bars are drawn
+    // against on either measure. Sent because on the slow list neither is
+    // in the lines.
+    maxUnits: number;
+    maxRevenue: number;
   };
   // Active products in this category filed under the supplier with no sale
   // line in the range. Counted, not listed: over a month that is most of a
   // big category, and fifteen arbitrary names would say less than the number.
   unsoldItems: number;
-  // Up to the cap, ranked within the category in the list's direction.
+  // The union of the category's top fifteen by units and by revenue, in the
+  // list's direction, unordered: the browser sorts on whichever measure is
+  // showing and cuts to the cap.
   lines: SupplierItemLine[];
 }
 
 export interface SupplierItemLines {
   supplierId: number;
   order: "top" | "bottom";
-  // In the list's direction: the category that sold most first on the best
-  // sellers, the one that sold least first on the slow sellers. A category
-  // with products on the books but nothing sold is here too, with no lines.
+  // Unordered: the browser sorts categories on the measure showing, in the
+  // list's direction. A category with products on the books but nothing
+  // sold is here too, with no lines.
   categories: SupplierItemCategory[];
 }
 
