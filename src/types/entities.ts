@@ -820,10 +820,12 @@ export interface SupplierOption {
 
 // ── Products by supplier ─────────────────────────────────────
 //
-// One supplier's products ranked on net units sold over a window, read off the
-// invoice lines like the category dialog: billed, never collected, returns net
-// off. A product is the supplier's through InventoryItem.supplierId, the same
-// link the reorder basket and the supplier page count by.
+// One supplier's products ranked on net units sold over a window, inside each
+// of their categories, read off the invoice lines like the category dialog:
+// billed, never collected, returns net off. A product is the supplier's
+// through InventoryItem.supplierId, the same link the reorder basket and the
+// supplier page count by. Nothing here is a share: those are divisions the
+// browser does from the totals below.
 export interface SupplierItemLine {
   itemId: number;
   name: string;
@@ -831,22 +833,30 @@ export interface SupplierItemLine {
   revenue: number; // net billed for those units
 }
 
-export interface SupplierItemLines {
-  supplierId: number;
-  order: "top" | "bottom";
-  // Every product of this supplier that sold over the range, so the browser
-  // can work out each line's share and say how much of the whole the list is.
+export interface SupplierItemCategory {
+  category: string;
+  // Every product of the supplier in this category that sold over the range.
   total: {
     units: number;
     revenue: number;
     items: number; // distinct products with at least one line in the range
-    maxUnits: number; // the best seller's units, which every bar is drawn against
+    maxUnits: number; // the category's best seller, which its bars are drawn against
   };
-  // Active products filed under this supplier with no sale line in the range.
-  // Counted, not listed: over a month that is most of a big supplier's range,
-  // and fifteen arbitrary names from it would say less than the number does.
+  // Active products in this category filed under the supplier with no sale
+  // line in the range. Counted, not listed: over a month that is most of a
+  // big category, and fifteen arbitrary names would say less than the number.
   unsoldItems: number;
+  // Up to the cap, ranked within the category in the list's direction.
   lines: SupplierItemLine[];
+}
+
+export interface SupplierItemLines {
+  supplierId: number;
+  order: "top" | "bottom";
+  // In the list's direction: the category that sold most first on the best
+  // sellers, the one that sold least first on the slow sellers. A category
+  // with products on the books but nothing sold is here too, with no lines.
+  categories: SupplierItemCategory[];
 }
 
 // ── Category performance (period over period) ────────────────

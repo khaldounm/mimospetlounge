@@ -150,8 +150,8 @@ export default function PurchasesSection({
             <ChartCard title="Products by supplier">
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Pick a supplier to see which of its products sold the most units
-                over {rangeSummary(range).toLowerCase()}, and which sold the
-                fewest.
+                in each category over {rangeSummary(range).toLowerCase()}, and
+                which sold the fewest.
               </Typography>
               <TextField
                 select

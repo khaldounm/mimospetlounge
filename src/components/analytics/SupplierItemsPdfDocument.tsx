@@ -10,26 +10,42 @@ import { CLINIC } from "@/constants/clinic";
 import {
   SUPPLIER_ITEM_ORDER_LABELS,
   type SupplierItemOrder,
+  type SupplierItemView,
 } from "@/constants/analytics";
-import { formatClinicDateTime, formatMoney, formatShare } from "@/utils/format";
+import {
+  formatClinicDateTime,
+  formatMoney,
+  formatShare,
+  formatUnits,
+} from "@/utils/format";
 import { formatRangeLabel } from "@/utils/date-range";
 import {
+  categoryNote,
+  flatLines,
+  flatNote,
+  shareOf,
+  soldSummary,
   supplierItemsCaption,
-  supplierItemsNote,
-  unitShare,
+  supplierMaxUnits,
+  supplierNote,
+  supplierTotals,
 } from "@/utils/supplier-items";
 import type {
   AnalyticsRange,
+  SupplierItemLine,
   SupplierItemLines,
   SupplierOption,
 } from "@/types/entities";
 
-// One supplier's best or slowest sellers as a page to hand over: the clinic's
-// letterhead, the supplier, the dates, the fifteen lines with their share of
-// the supplier's units, and what they add up to. Rendered in the browser
+// One supplier's best or slowest sellers as pages to hand over: the clinic's
+// letterhead, the supplier, the dates, then the list laid out the way the
+// dialog was showing it: one section per category with its fifteen lines and
+// what they add up to, and the supplier's line under them all; or the one
+// flat fifteen across the supplier on a single page. Rendered in the browser
 // from the figures the dialog already holds, so a download costs the server
-// nothing and shows exactly what was on screen. Fifteen rows and a total fit
-// one page, which keeps it clear of react-pdf's multi-page footer trap.
+// nothing and shows exactly what was on screen. The footer is flow content
+// at the end, not pinned to every page: react-pdf mislays a pinned footer on
+// longer documents, and six categories of fifteen run to three pages.
 
 const COLORS = {
   text: "#1a1a1a",
@@ -98,13 +114,44 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 5,
   },
-  totalRow: {
+  // A category's own line above its products: what their bars and shares
+  // are measured against.
+  bandRow: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: COLORS.band,
+    borderTopWidth: 0.5,
+    borderTopColor: COLORS.line,
     paddingVertical: 5,
     paddingHorizontal: 5,
-    marginTop: 2,
+    marginTop: 6,
+    fontFamily: "Helvetica-Bold",
+  },
+  bandSummary: {
+    fontFamily: "Helvetica",
+    color: COLORS.muted,
+    fontSize: 8,
+  },
+  emptyRow: {
+    paddingVertical: 4,
+    paddingHorizontal: 5,
+    paddingLeft: 36,
+    color: COLORS.muted,
+  },
+  categoryNote: {
+    paddingHorizontal: 5,
+    paddingTop: 3,
+    fontSize: 7.5,
+    color: COLORS.muted,
+  },
+  totalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderTopWidth: 1.5,
+    borderTopColor: COLORS.rule,
+    paddingVertical: 6,
+    paddingHorizontal: 5,
+    marginTop: 8,
     fontFamily: "Helvetica-Bold",
   },
 
@@ -115,8 +162,8 @@ const styles = StyleSheet.create({
   colBilled: { width: "14%", textAlign: "right" },
 
   // The share as a bar with its figure beside it, the same picture the dialog
-  // draws: filled against the supplier's best seller, labelled with the share
-  // of the whole.
+  // draws: filled against the best of its group, labelled with the share of
+  // the whole it belongs to.
   shareCell: { flexDirection: "row", alignItems: "center" },
   track: {
     flexGrow: 1,
@@ -163,9 +210,38 @@ function ShareCell({
   );
 }
 
+// The ranked rows of one list: bars against the best seller of the group,
+// shares of the group's units, the group being a category or the supplier.
+function Lines({
+  lines,
+  maxUnits,
+  wholeUnits,
+}: {
+  lines: SupplierItemLine[];
+  maxUnits: number;
+  wholeUnits: number;
+}) {
+  return lines.map((line, i) => (
+    <View key={line.itemId} style={styles.row} wrap={false}>
+      <Text style={styles.colRank}>{i + 1}</Text>
+      <Text style={styles.colName}>{line.name}</Text>
+      <Text style={styles.colUnits}>{formatUnits(line.units)}</Text>
+      <View style={styles.colShare}>
+        <ShareCell
+          units={line.units}
+          max={maxUnits}
+          share={shareOf(line.units, wholeUnits)}
+        />
+      </View>
+      <Text style={styles.colBilled}>{formatMoney(line.revenue)}</Text>
+    </View>
+  ));
+}
+
 export default function SupplierItemsPdfDocument({
   supplier,
   order,
+  view,
   range,
   data,
   generatedAt,
@@ -173,6 +249,7 @@ export default function SupplierItemsPdfDocument({
 }: {
   supplier: SupplierOption;
   order: SupplierItemOrder;
+  view: SupplierItemView;
   range: AnalyticsRange;
   data: SupplierItemLines;
   // When the file was made, as an ISO string, so the same report pulled twice
@@ -182,7 +259,9 @@ export default function SupplierItemsPdfDocument({
 }) {
   const label = SUPPLIER_ITEM_ORDER_LABELS[order];
   const address = CLINIC.addressLines.filter(Boolean);
-  const note = supplierItemsNote(data);
+  const totals = supplierTotals(data);
+  const flat = view === "item" ? flatLines(data) : [];
+  const note = view === "item" ? flatNote(data, flat) : supplierNote(data);
 
   return (
     <Document title={`${label} - ${supplier.name}`} author={CLINIC.name}>
@@ -227,10 +306,14 @@ export default function SupplierItemsPdfDocument({
         <View style={styles.subject}>
           <Text style={styles.sectionLabel}>Supplier</Text>
           <Text style={styles.supplierName}>{supplier.name}</Text>
-          <Text style={styles.muted}>{supplierItemsCaption(order, range)}</Text>
+          <Text style={styles.muted}>
+            {supplierItemsCaption(order, view, range)}
+          </Text>
         </View>
 
-        <View style={styles.headRow}>
+        {/* Repeats at the top of every page, so a column of figures on a
+            continuation sheet is never unlabelled. */}
+        <View style={styles.headRow} fixed>
           <Text style={styles.colRank}>#</Text>
           <Text style={styles.colName}>Product</Text>
           <Text style={styles.colUnits}>Units</Text>
@@ -238,54 +321,130 @@ export default function SupplierItemsPdfDocument({
           <Text style={styles.colBilled}>Billed</Text>
         </View>
 
-        {data.lines.length === 0 ? (
+        {data.categories.length === 0 && (
           <View style={styles.row}>
             <Text style={styles.muted}>
-              None of this supplier&apos;s products sold over the period.
+              This supplier has no products filed under it.
             </Text>
           </View>
-        ) : (
-          data.lines.map((line, i) => (
-            <View key={line.itemId} style={styles.row}>
-              <Text style={styles.colRank}>{i + 1}</Text>
-              <Text style={styles.colName}>{line.name}</Text>
-              <Text style={styles.colUnits}>{line.units}</Text>
-              <View style={styles.colShare}>
-                <ShareCell
-                  units={line.units}
-                  max={data.total.maxUnits}
-                  share={unitShare(data, line.units)}
-                />
-              </View>
-              <Text style={styles.colBilled}>{formatMoney(line.revenue)}</Text>
-            </View>
-          ))
         )}
 
-        <View style={styles.totalRow}>
-          <Text style={styles.colRank} />
-          <Text style={styles.colName}>
-            All {data.total.items} products that sold
-          </Text>
-          <Text style={styles.colUnits}>{data.total.units}</Text>
-          <View style={styles.colShare}>
-            <ShareCell
-              units={data.total.maxUnits}
-              max={data.total.maxUnits}
-              share={data.total.units > 0 ? 100 : null}
+        {view === "item" && (
+          <>
+            {flat.length === 0 && (
+              <View style={styles.row}>
+                <Text style={styles.muted}>
+                  None of this supplier&apos;s products sold over the period.
+                </Text>
+              </View>
+            )}
+            <Lines
+              lines={flat}
+              maxUnits={supplierMaxUnits(data)}
+              wholeUnits={totals.units}
             />
+            <View style={styles.totalRow} wrap={false}>
+              <Text style={styles.colRank} />
+              <Text style={styles.colName}>
+                {`All ${totals.items} products that sold`}
+                {totals.unsoldItems > 0 && (
+                  <Text style={styles.bandSummary}>
+                    {`   ${totals.unsoldItems} did not sell`}
+                  </Text>
+                )}
+              </Text>
+              <Text style={styles.colUnits}>{formatUnits(totals.units)}</Text>
+              <View style={styles.colShare}>
+                <ShareCell
+                  units={supplierMaxUnits(data)}
+                  max={supplierMaxUnits(data)}
+                  share={totals.units > 0 ? 100 : null}
+                />
+              </View>
+              <Text style={styles.colBilled}>
+                {formatMoney(totals.revenue)}
+              </Text>
+            </View>
+          </>
+        )}
+
+        {view === "category" &&
+          data.categories.map((cat) => {
+            const note = categoryNote(cat);
+            return (
+              <View key={cat.category}>
+                {/* A band is never left alone at the foot of a page: it moves
+                  to the next one with the lines it introduces. */}
+                <View style={styles.bandRow} minPresenceAhead={48}>
+                  <Text style={styles.colRank} />
+                  <Text style={styles.colName}>
+                    {cat.category}
+                    <Text style={styles.bandSummary}>
+                      {`   ${soldSummary(cat.total.items, cat.unsoldItems)}`}
+                    </Text>
+                  </Text>
+                  <Text style={styles.colUnits}>
+                    {formatUnits(cat.total.units)}
+                  </Text>
+                  <View style={styles.colShare}>
+                    <ShareCell
+                      units={cat.total.units}
+                      max={totals.maxUnits}
+                      share={shareOf(cat.total.units, totals.units)}
+                    />
+                  </View>
+                  <Text style={styles.colBilled}>
+                    {formatMoney(cat.total.revenue)}
+                  </Text>
+                </View>
+
+                {cat.lines.length === 0 && (
+                  <Text style={styles.emptyRow}>
+                    Nothing sold in this category over the period.
+                  </Text>
+                )}
+
+                <Lines
+                  lines={cat.lines}
+                  maxUnits={cat.total.maxUnits}
+                  wholeUnits={cat.total.units}
+                />
+
+                {note && <Text style={styles.categoryNote}>{note}</Text>}
+              </View>
+            );
+          })}
+
+        {view === "category" && data.categories.length > 1 && (
+          <View style={styles.totalRow} wrap={false}>
+            <Text style={styles.colRank} />
+            <Text style={styles.colName}>
+              All categories
+              <Text style={styles.bandSummary}>
+                {`   ${soldSummary(totals.items, totals.unsoldItems)}`}
+              </Text>
+            </Text>
+            <Text style={styles.colUnits}>{formatUnits(totals.units)}</Text>
+            <View style={styles.colShare}>
+              <ShareCell
+                units={totals.maxUnits}
+                max={totals.maxUnits}
+                share={totals.units > 0 ? 100 : null}
+              />
+            </View>
+            <Text style={styles.colBilled}>{formatMoney(totals.revenue)}</Text>
           </View>
-          <Text style={styles.colBilled}>
-            {formatMoney(data.total.revenue)}
-          </Text>
-        </View>
+        )}
 
         <Text style={styles.note}>
           {note ? `${note} ` : ""}
           Units are what customers were invoiced for, net of returns; Billed is
           the value of those invoice lines. Stock used by the clinic itself is
           not counted. A product is this supplier&apos;s when it is filed under
-          them as its usual supplier.
+          them as its usual supplier
+          {view === "category"
+            ? ", and its share is of the category it sits in; a category's share is of the supplier."
+            : ", and its share is of every unit the supplier's products sold."}
         </Text>
 
         <Text style={styles.footer}>

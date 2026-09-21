@@ -92,7 +92,10 @@ export function formatMoney(value: string | number | null | undefined): string {
 // a big supplier all live down here.
 export function formatShare(share: number): string {
   if (share >= 1 || share <= 0) return `${Math.round(share)}%`;
-  return share < 0.1 ? "<0.1%" : `${share.toFixed(1)}%`;
+  if (share < 0.1) return "<0.1%";
+  // 0.96 rounds up to a whole one, not to "1.0%".
+  const tenths = Math.round(share * 10) / 10;
+  return tenths >= 1 ? "1%" : `${tenths}%`;
 }
 
 export function formatMoneyCompact(
@@ -186,6 +189,12 @@ export function todayForDateInput(): string {
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// A unit count in a column of them: thousands separated, fractions kept only
+// where a loose sale left one ("9,396.93"), never "9396.930".
+export function formatUnits(value: number): string {
+  return value.toLocaleString(undefined, { maximumFractionDigits: 3 });
 }
 
 // Stock quantities are decimal (a part-pack sells as 0.25 of a bag), but almost

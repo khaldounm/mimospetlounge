@@ -53,9 +53,22 @@ export const SUPPLIER_ITEM_ORDER_LABELS: Record<SupplierItemOrder, string> = {
   bottom: "Slow sellers",
 };
 
-// How many lines either list shows. Ranked and cut in the database, so the
-// biggest supplier's year of sales comes back as fifteen rows.
+// How many lines either list shows: fifteen in each category, and fifteen
+// across the supplier. Ranked and cut in the database per category; the
+// supplier-wide fifteen is a merge of those in the browser, since a product
+// in the supplier's top fifteen is in its category's top fifteen by
+// necessity, and the same holds at the bottom.
 export const SUPPLIER_ITEMS_LIMIT = 15;
+
+// The two ways the dialog lays the same reply out: grouped under the
+// categories, or one flat list across the supplier.
+export const SUPPLIER_ITEM_VIEWS = ["category", "item"] as const;
+export type SupplierItemView = (typeof SUPPLIER_ITEM_VIEWS)[number];
+
+export const SUPPLIER_ITEM_VIEW_LABELS: Record<SupplierItemView, string> = {
+  category: "By category",
+  item: "By item",
+};
 
 // ---- Services ----
 

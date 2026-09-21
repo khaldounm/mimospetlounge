@@ -53,7 +53,7 @@ import type {
   ProfitAnalytics,
   PurchasesAnalytics,
   RevenueAnalytics,
-  SupplierItemLine,
+  SupplierItemCategory,
   SupplierItemLines,
 } from "@/types/entities";
 
@@ -1887,36 +1887,44 @@ async function getPurchasesSection(
 
 // ---- products by supplier ----
 
-// One row of the ranked query. The item columns are null on the row that
-// comes back when nothing sold, which carries the totals and nothing else.
+// One row of the ranked query: a category's totals, and one of its ranked
+// lines. The line columns are null on a category that sold nothing, which
+// comes back as one row carrying its totals and its unsold count.
 type SupplierItemRow = {
-  item_id: number | null;
-  name: string | null;
-  units: Prisma.Decimal | null;
-  revenue: Prisma.Decimal | null;
+  category: string;
   total_units: Prisma.Decimal;
   total_revenue: Prisma.Decimal;
   max_units: Prisma.Decimal;
   sold_items: bigint;
   unsold_items: bigint;
+  item_id: number | null;
+  name: string | null;
+  units: Prisma.Decimal | null;
+  revenue: Prisma.Decimal | null;
 };
 
+const thousandths = (value: Prisma.Decimal | null | undefined) =>
+  Math.round((value?.toNumber() ?? 0) * 1000) / 1000;
+
 /**
- * One supplier's products ranked on net units sold over the window: the
- * fifteen that sold the most, or the fifteen that sold the fewest. Read off
- * the invoice lines under the same rules as the category dialog (traded
- * invoices, hidden lines out, returns net off), over the products filed under
- * the supplier through InventoryItem.supplierId.
+ * One supplier's products ranked on net units sold over the window, within
+ * each of their categories: the fifteen that sold the most in each, or the
+ * fifteen that sold the fewest. Read off the invoice lines under the same
+ * rules as the category dialog (traded invoices, hidden lines out, returns
+ * net off), over the products filed under the supplier through
+ * InventoryItem.supplierId.
  *
- * Ranked and cut in the database, with the supplier's totals joined onto the
- * rows, so the biggest supplier's year of lines comes back as fifteen rows and
- * four totals rather than every product it sold. Shares are worked out in the
- * browser from those. The direction is a multiplier rather than a SQL
- * fragment: one prepared statement serves both lists, and nothing from the
- * request is ever spliced into the query text.
+ * Ranked and cut in the database: a window numbers each product inside its
+ * category, and the category totals join onto the rows, so the biggest
+ * supplier's year of lines comes back as at most fifteen rows per category
+ * and one row of totals each, never every product it sold. The supplier-wide
+ * figures are sums of those and are added up in the browser. The direction is
+ * a multiplier rather than a SQL fragment: one prepared statement serves both
+ * lists, and nothing from the request is ever spliced into the query text.
  *
- * The one row that comes back when nothing sold still carries the totals, so
- * the dialog can say how many of the supplier's products went unsold.
+ * A category with products on the books but no sale in the window still
+ * comes back, with its unsold count and no lines: on the slow sellers, a
+ * whole category that did not move is the loudest row there is.
  */
 export async function getSupplierItemLines(
   supplierId: number,
@@ -1930,6 +1938,7 @@ export async function getSupplierItemLines(
   const rows = await prisma.$queryRaw<SupplierItemRow[]>`
     WITH sold AS (
       SELECT it.item_id, it.name,
+             COALESCE(NULLIF(TRIM(it.category), ''), ${UNCATEGORISED_LABEL}) AS category,
              SUM(l.quantity)   AS units,
              SUM(l.line_total) AS revenue
       FROM invoice_line_items l
@@ -1943,60 +1952,78 @@ export async function getSupplierItemLines(
       GROUP BY it.item_id
     ),
     ranked AS (
-      SELECT item_id, name, units, revenue
+      SELECT item_id, name, category, units, revenue,
+             ROW_NUMBER() OVER (
+               PARTITION BY category
+               ORDER BY units * ${sign}::int, revenue * ${sign}::int, name
+             ) AS rank
       FROM sold
-      ORDER BY units * ${sign}::int, revenue * ${sign}::int, name
-      LIMIT ${SUPPLIER_ITEMS_LIMIT}
     ),
-    whole AS (
-      SELECT COALESCE(SUM(units), 0)   AS total_units,
-             COALESCE(SUM(revenue), 0) AS total_revenue,
-             COALESCE(MAX(units), 0)   AS max_units,
-             COUNT(*)                  AS sold_items,
-             -- A product still on the books that did not sell at all. A
-             -- deleted product is left out here and kept in "sold", where a
-             -- sale it made before it was retired still counts.
-             (SELECT COUNT(*)
-              FROM inventory_items u
-              WHERE u.supplier_id = ${supplierId}
-                AND u.deleted_at IS NULL
-                AND NOT EXISTS (SELECT 1 FROM sold WHERE sold.item_id = u.item_id)
-             ) AS unsold_items
-      FROM sold
+    -- Products still on the books that did not sell at all, per category.
+    -- A deleted product is left out here and kept in "sold", where a sale it
+    -- made before it was retired still counts.
+    unsold AS (
+      SELECT COALESCE(NULLIF(TRIM(u.category), ''), ${UNCATEGORISED_LABEL}) AS category,
+             COUNT(*) AS unsold_items
+      FROM inventory_items u
+      WHERE u.supplier_id = ${supplierId}
+        AND u.deleted_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM sold WHERE sold.item_id = u.item_id)
+      GROUP BY 1
+    ),
+    -- FULL JOIN, so a category appears whether it sold, sat unsold, or both.
+    categories AS (
+      SELECT COALESCE(s.category, x.category) AS category,
+             COALESCE(s.units, 0)     AS total_units,
+             COALESCE(s.revenue, 0)   AS total_revenue,
+             COALESCE(s.max_units, 0) AS max_units,
+             COALESCE(s.items, 0)     AS sold_items,
+             COALESCE(x.unsold_items, 0) AS unsold_items
+      FROM (
+        SELECT category,
+               SUM(units) AS units, SUM(revenue) AS revenue,
+               MAX(units) AS max_units, COUNT(*) AS items
+        FROM sold
+        GROUP BY category
+      ) s
+      FULL OUTER JOIN unsold x ON x.category = s.category
     )
-    -- LEFT JOIN from the totals, so a supplier that sold nothing still
-    -- answers with one row of zeros rather than with no rows at all.
-    SELECT r.item_id, r.name, r.units, r.revenue,
-           w.total_units, w.total_revenue, w.max_units,
-           w.sold_items, w.unsold_items
-    FROM whole w
-    LEFT JOIN ranked r ON TRUE
-    ORDER BY r.units * ${sign}::int, r.revenue * ${sign}::int, r.name`;
+    SELECT c.category, c.total_units, c.total_revenue, c.max_units,
+           c.sold_items, c.unsold_items,
+           r.item_id, r.name, r.units, r.revenue
+    FROM categories c
+    LEFT JOIN ranked r
+      ON r.category = c.category AND r.rank <= ${SUPPLIER_ITEMS_LIMIT}
+    ORDER BY c.total_units * ${sign}::int, c.category, r.rank`;
 
-  const whole = rows[0];
-  const lines: SupplierItemLine[] = [];
+  // Rows arrive grouped by category, each category's lines in rank order.
+  const categories: SupplierItemCategory[] = [];
   for (const r of rows) {
+    let current = categories[categories.length - 1];
+    if (!current || current.category !== r.category) {
+      current = {
+        category: r.category,
+        total: {
+          units: thousandths(r.total_units),
+          revenue: round2(r.total_revenue.toNumber()),
+          items: Number(r.sold_items),
+          maxUnits: thousandths(r.max_units),
+        },
+        unsoldItems: Number(r.unsold_items),
+        lines: [],
+      };
+      categories.push(current);
+    }
     if (r.item_id === null) continue;
-    lines.push({
+    current.lines.push({
       itemId: r.item_id,
       name: r.name ?? `Item #${r.item_id}`,
-      units: Math.round((r.units?.toNumber() ?? 0) * 1000) / 1000,
+      units: thousandths(r.units),
       revenue: round2(r.revenue?.toNumber() ?? 0),
     });
   }
 
-  return {
-    supplierId,
-    order,
-    total: {
-      units: Math.round((whole?.total_units.toNumber() ?? 0) * 1000) / 1000,
-      revenue: round2(whole?.total_revenue.toNumber() ?? 0),
-      items: Number(whole?.sold_items ?? 0),
-      maxUnits: Math.round((whole?.max_units.toNumber() ?? 0) * 1000) / 1000,
-    },
-    unsoldItems: Number(whole?.unsold_items ?? 0),
-    lines,
-  };
+  return { supplierId, order, categories };
 }
 
 // ---- public API ----
