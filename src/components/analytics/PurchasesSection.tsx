@@ -1,9 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import Link from "@/components/ui/AppLink";
-import { Button, Stack, Typography } from "@mui/material";
+import { Button, MenuItem, Stack, TextField, Typography } from "@mui/material";
 import { BarChart } from "@mui/x-charts/BarChart";
 import DescriptionIcon from "@mui/icons-material/Description";
+import TrendingUpIcon from "@mui/icons-material/TrendingUp";
+import TrendingDownIcon from "@mui/icons-material/TrendingDown";
 import { useAnalyticsSection } from "@/hooks/useAnalyticsSection";
 import { rangeQuery, rangeSummary } from "@/utils/date-range";
 import DateRangeControl from "@/components/ui/DateRangeControl";
@@ -19,6 +22,10 @@ import {
   SectionPlaceholder,
   money,
 } from "./AnalyticsPrimitives";
+import { SUPPLIER_ITEM_ORDER_LABELS } from "@/constants/analytics";
+import SupplierItemsDialog, {
+  type SupplierItemsTarget,
+} from "./SupplierItemsDialog";
 import type { AnalyticsRange, PurchasesAnalytics } from "@/types/entities";
 
 export default function PurchasesSection({
@@ -29,6 +36,17 @@ export default function PurchasesSection({
   const { range, data, loading, error, setRange, load } =
     useAnalyticsSection<PurchasesAnalytics>("purchases", initialRange);
   const trendHasData = data?.trend.some((t) => t.billed > 0 || t.paid > 0);
+
+  // The "products by supplier" box: which supplier is picked, and which of
+  // its two lists is open. The picker holds the id as the select's string
+  // value; the supplier itself is looked up when a list is opened, so the
+  // dialog can carry its name without another request.
+  const [supplierId, setSupplierId] = useState("");
+  const [itemsTarget, setItemsTarget] = useState<SupplierItemsTarget | null>(
+    null,
+  );
+  const pickedSupplier =
+    data?.suppliers.find((s) => String(s.supplierId) === supplierId) ?? null;
 
   return (
     <CollapsibleSection
@@ -126,7 +144,73 @@ export default function PurchasesSection({
                 <EmptyChart />
               )}
             </ChartCard>
+            {/* Which of a supplier's products move and which do not, over
+                this section's range. Nothing is fetched until a list is
+                opened: the picker is fed from the section's own reply. */}
+            <ChartCard title="Products by supplier">
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Pick a supplier to see which of its products sold the most units
+                over {rangeSummary(range).toLowerCase()}, and which sold the
+                fewest.
+              </Typography>
+              <TextField
+                select
+                label="Supplier"
+                value={supplierId}
+                onChange={(e) => setSupplierId(e.target.value)}
+                fullWidth
+                size="small"
+                helperText={
+                  data.suppliers.length === 0
+                    ? "No supplier has products filed under it yet."
+                    : "Only suppliers with products filed under them."
+                }
+              >
+                {data.suppliers.map((s) => (
+                  <MenuItem key={s.supplierId} value={String(s.supplierId)}>
+                    {s.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+              <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                <Button
+                  variant="contained"
+                  color="success"
+                  disableElevation
+                  startIcon={<TrendingUpIcon />}
+                  disabled={!pickedSupplier}
+                  onClick={() =>
+                    pickedSupplier &&
+                    setItemsTarget({ supplier: pickedSupplier, order: "top" })
+                  }
+                >
+                  {SUPPLIER_ITEM_ORDER_LABELS.top}
+                </Button>
+                <Button
+                  variant="contained"
+                  color="warning"
+                  disableElevation
+                  startIcon={<TrendingDownIcon />}
+                  disabled={!pickedSupplier}
+                  onClick={() =>
+                    pickedSupplier &&
+                    setItemsTarget({
+                      supplier: pickedSupplier,
+                      order: "bottom",
+                    })
+                  }
+                >
+                  {SUPPLIER_ITEM_ORDER_LABELS.bottom}
+                </Button>
+              </Stack>
+            </ChartCard>
           </ChartGrid>
+
+          <SupplierItemsDialog
+            target={itemsTarget}
+            range={range}
+            onClose={() => setItemsTarget(null)}
+          />
 
           <Stack direction="row" sx={{ mt: 2 }}>
             <Button

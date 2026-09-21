@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Alert,
   Box,
@@ -15,121 +16,175 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
-import { useCategoryTopLines } from "@/hooks/useCategoryTopLines";
+import DownloadIcon from "@mui/icons-material/Download";
+import { useSupplierItemLines } from "@/hooks/useSupplierItemLines";
 import {
-  formatRangeLabel,
-  priorRange,
-  type ComparisonMode,
-} from "@/utils/date-range";
-import { CATEGORY_TOP_LIMIT } from "@/constants/analytics";
+  SUPPLIER_ITEM_ORDER_LABELS,
+  type SupplierItemOrder,
+} from "@/constants/analytics";
 import {
-  DeltaChip,
-  SHARE_COLUMN_WIDTH,
-  ShareBar,
-  money,
-} from "./AnalyticsPrimitives";
-import type { AnalyticsRange } from "@/types/entities";
+  supplierItemsCaption,
+  supplierItemsFileName,
+  supplierItemsNote,
+  unitShare,
+} from "@/utils/supplier-items";
+import { SHARE_COLUMN_WIDTH, ShareBar, money } from "./AnalyticsPrimitives";
+import type {
+  AnalyticsRange,
+  SupplierItemLines,
+  SupplierOption,
+} from "@/types/entities";
 
-export interface CategoryTopTarget {
-  group: string;
-  groupLabel: string;
-  category: string;
+export interface SupplierItemsTarget {
+  supplier: SupplierOption;
+  order: SupplierItemOrder;
 }
 
 // What the dialog reserves for the table while it loads: about eight rows, so
 // the common case unrolls into space already on screen rather than growing
-// the dialog from a strip. Let go once the table is in, with a transition, so
-// a category with two lines does not sit above a blank band.
+// the dialog from a strip. Let go once the table is in, with a transition.
 const LOADING_STAGE_HEIGHT = 320;
 
 interface Props {
   // Null closes the dialog. Passing the target rather than an `open` flag
-  // keeps the row and its dialog in one piece of state on the section.
-  target: CategoryTopTarget | null;
+  // keeps the picker and its dialog in one piece of state on the section.
+  target: SupplierItemsTarget | null;
   range: AnalyticsRange;
-  mode: ComparisonMode;
   onClose: () => void;
 }
 
-// What is behind one row of the category table: its best-billing lines over
-// the same range, against the same comparison window. Opened on demand from
-// the row, fetched on open, and remounted per open so nothing is held for a
-// row nobody is looking at.
-export default function CategoryTopDialog({
+// Saves the list as a one-page PDF, built here in the browser from the rows
+// already on screen: the renderer and the document are loaded on demand, the
+// server is not asked for anything, and the file is exactly what was looked
+// at. The icon reports its own failure rather than an alert, since the list
+// under it is fine.
+function DownloadPdf({
   target,
   range,
-  mode,
-  onClose,
-}: Props) {
+  data,
+}: {
+  target: SupplierItemsTarget;
+  range: AnalyticsRange;
+  data: SupplierItemLines | null;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const title = "Download as PDF";
+
+  async function download() {
+    if (!data) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const [{ pdf }, { default: SupplierItemsPdfDocument }] =
+        await Promise.all([
+          import("@react-pdf/renderer"),
+          import("./SupplierItemsPdfDocument"),
+        ]);
+      const blob = await pdf(
+        <SupplierItemsPdfDocument
+          supplier={target.supplier}
+          order={target.order}
+          range={range}
+          data={data}
+          generatedAt={new Date().toISOString()}
+        />,
+      ).toBlob();
+      const href = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = supplierItemsFileName(
+        target.supplier,
+        target.order,
+        range,
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(href);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to build the PDF");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    // Wide: eight columns, and the product names are long. At md the name
-    // column was squeezed to a third of its width and every row wrapped to a
-    // different height.
-    <Dialog open={target !== null} onClose={onClose} fullWidth maxWidth="lg">
-      {target && (
-        <TopLines target={target} range={range} mode={mode} onClose={onClose} />
-      )}
+    <Tooltip title={error ?? title}>
+      {/* A disabled button fires no events, so the tooltip needs a wrapper
+          that can still be hovered. */}
+      <span>
+        <IconButton
+          aria-label={title}
+          color={error ? "error" : "default"}
+          disabled={!data || data.lines.length === 0 || busy}
+          onClick={() => void download()}
+        >
+          {busy ? <CircularProgress size={20} /> : <DownloadIcon />}
+        </IconButton>
+      </span>
+    </Tooltip>
+  );
+}
+
+// One supplier's products ranked on units sold over the section's range: the
+// fifteen that moved most, or the fifteen that moved least. Opened from the
+// purchases section, fetched on open, and remounted per open so nothing is
+// held for a list nobody is looking at. Fifteen rows and four totals arrive;
+// every share on screen is worked out here from those.
+export default function SupplierItemsDialog({ target, range, onClose }: Props) {
+  return (
+    // Wide enough for the product names, which are long, without the spread
+    // the eight-column category dialog needs.
+    <Dialog open={target !== null} onClose={onClose} fullWidth maxWidth="md">
+      {target && <ItemLines target={target} range={range} onClose={onClose} />}
     </Dialog>
   );
 }
 
-function TopLines({
+function ItemLines({
   target,
   range,
-  mode,
   onClose,
-}: Omit<Props, "target"> & { target: CategoryTopTarget }) {
-  const { data, loading, error } = useCategoryTopLines({
-    group: target.group,
-    category: target.category,
+}: Omit<Props, "target"> & { target: SupplierItemsTarget }) {
+  const { data, loading, error } = useSupplierItemLines({
+    supplierId: target.supplier.supplierId,
+    order: target.order,
     range,
-    mode,
   });
 
-  // The top line sets the scale every bar is drawn against.
-  const maxCurrent = data
-    ? data.lines.reduce((max, l) => Math.max(max, l.current), 0)
-    : 0;
-
-  // How much of the row the list accounts for. On a category with fewer lines
-  // than the cap that is all of it and the note is skipped.
-  const listed = data?.lines.reduce((sum, l) => sum + l.current, 0) ?? 0;
-  const capped = (data?.lines.length ?? 0) >= CATEGORY_TOP_LIMIT;
-  const share =
-    data && capped && data.total.current > 0
-      ? Math.round((listed / data.total.current) * 100)
-      : null;
+  // Every bar is drawn against the supplier's best seller, whichever list
+  // this is, so the slow sellers read as the slivers they are rather than
+  // filling their own column.
+  const maxUnits = data?.total.maxUnits ?? 0;
+  const note = data ? supplierItemsNote(data) : null;
 
   return (
     <>
-      <DialogTitle sx={{ pr: 6 }}>
-        {target.category}
+      <DialogTitle sx={{ pr: 12 }}>
+        {target.supplier.name}
         <Typography
           component="span"
           variant="body2"
           color="text.secondary"
           sx={{ ml: 1 }}
         >
-          {target.groupLabel}
+          {SUPPLIER_ITEM_ORDER_LABELS[target.order]}
         </Typography>
-        <IconButton
-          aria-label="Close"
-          onClick={onClose}
-          sx={{ position: "absolute", right: 8, top: 8 }}
-        >
-          <CloseIcon />
-        </IconButton>
+        <Box sx={{ position: "absolute", right: 8, top: 8 }}>
+          <DownloadPdf target={target} range={range} data={data} />
+          <IconButton aria-label="Close" onClick={onClose}>
+            <CloseIcon />
+          </IconButton>
+        </Box>
       </DialogTitle>
       <DialogContent>
-        {/* The comparison window is worked out here rather than read off the
-            reply, so this line is complete before the data lands and never
-            reflows under it. */}
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-          Top {CATEGORY_TOP_LIMIT} by billed revenue, {formatRangeLabel(range)}{" "}
-          against {formatRangeLabel(priorRange(range, mode))}.
+          {supplierItemsCaption(target.order, range)}
         </Typography>
 
         {error && (
@@ -140,9 +195,7 @@ function TopLines({
 
         {/* A fixed-height stage while loading, so the dialog opens at a
             steady size instead of as a strip that jumps when the rows land.
-            The table then unrolls into it: Collapse animates the height from
-            nothing to the table's own, and past the stage's minimum the
-            dialog grows with it. */}
+            The table then unrolls into it. */}
         <Box
           sx={{
             position: "relative",
@@ -167,13 +220,14 @@ function TopLines({
           <Collapse in={!loading && data !== null} timeout={350}>
             {data && data.lines.length === 0 ? (
               <Typography color="text.secondary" sx={{ py: 3 }} align="center">
-                Nothing billed in this category over the period.
+                None of this supplier&apos;s products sold over the period.
+                {data.unsoldItems > 0 &&
+                  ` It has ${data.unsoldItems} on the books.`}
               </Typography>
             ) : (
               <Box sx={{ overflowX: "auto" }}>
                 <Table
                   size="small"
-                  // The header stays put while the list scrolls under it.
                   stickyHeader
                   sx={{
                     // Money and units line up digit for digit down a column.
@@ -190,7 +244,7 @@ function TopLines({
                   <TableHead>
                     <TableRow>
                       <TableCell sx={{ width: 40 }}>#</TableCell>
-                      <TableCell>Line</TableCell>
+                      <TableCell>Product</TableCell>
                       <TableCell align="right">Units</TableCell>
                       <TableCell
                         sx={{
@@ -200,21 +254,14 @@ function TopLines({
                       >
                         Share
                       </TableCell>
-                      <TableCell align="right">This period</TableCell>
-                      <TableCell align="right">Comparison</TableCell>
-                      <TableCell align="right">Change</TableCell>
-                      <TableCell align="right">%</TableCell>
+                      <TableCell align="right">Billed</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {(data?.lines ?? []).map((line, index) => (
                       <TableRow
-                        key={line.label}
+                        key={line.itemId}
                         hover
-                        // Banded, so a figure can be carried across seven
-                        // columns without losing its line. Set on the row
-                        // rather than by an nth-child rule, which would
-                        // outrank the hover tint.
                         sx={{
                           backgroundColor:
                             index % 2 === 1 ? "action.hover" : undefined,
@@ -227,7 +274,7 @@ function TopLines({
                             cell take the slack AND truncate instead of
                             stretching the table to fit the longest name. */}
                         <TableCell
-                          title={line.label}
+                          title={line.name}
                           sx={{
                             width: "100%",
                             maxWidth: 0,
@@ -235,11 +282,9 @@ function TopLines({
                             textOverflow: "ellipsis",
                           }}
                         >
-                          {line.label}
+                          {line.name}
                         </TableCell>
-                        <TableCell align="right">
-                          {line.units === null ? "-" : line.units}
-                        </TableCell>
+                        <TableCell align="right">{line.units}</TableCell>
                         <TableCell
                           sx={{
                             width: SHARE_COLUMN_WIDTH,
@@ -247,26 +292,13 @@ function TopLines({
                           }}
                         >
                           <ShareBar
-                            value={line.current}
-                            max={maxCurrent}
-                            share={
-                              data && data.total.current > 0
-                                ? (line.current / data.total.current) * 100
-                                : null
-                            }
+                            value={line.units}
+                            max={maxUnits}
+                            share={data ? unitShare(data, line.units) : null}
                           />
                         </TableCell>
                         <TableCell align="right">
-                          {money(line.current)}
-                        </TableCell>
-                        <TableCell align="right">{money(line.prior)}</TableCell>
-                        <TableCell align="right">{money(line.delta)}</TableCell>
-                        <TableCell align="right">
-                          <DeltaChip
-                            delta={line.delta}
-                            prior={line.prior}
-                            percent={line.percent}
-                          />
+                          {money(line.revenue)}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -285,43 +317,31 @@ function TopLines({
                         }}
                       >
                         <TableCell />
-                        <TableCell>Whole category</TableCell>
-                        <TableCell />
+                        <TableCell>
+                          All {data.total.items} products that sold
+                        </TableCell>
+                        <TableCell align="right">{data.total.units}</TableCell>
                         <TableCell sx={{ minWidth: SHARE_COLUMN_WIDTH }}>
                           <ShareBar
-                            value={maxCurrent}
-                            max={maxCurrent}
+                            value={maxUnits}
+                            max={maxUnits}
                             share={100}
                           />
                         </TableCell>
                         <TableCell align="right">
-                          {money(data.total.current)}
-                        </TableCell>
-                        <TableCell align="right">
-                          {money(data.total.prior)}
-                        </TableCell>
-                        <TableCell align="right">
-                          {money(data.total.delta)}
-                        </TableCell>
-                        <TableCell align="right">
-                          <DeltaChip
-                            delta={data.total.delta}
-                            prior={data.total.prior}
-                            percent={data.total.percent}
-                          />
+                          {money(data.total.revenue)}
                         </TableCell>
                       </TableRow>
                     )}
                   </TableBody>
                 </Table>
-                {share !== null && (
+                {note && (
                   <Typography
                     variant="caption"
                     color="text.secondary"
                     sx={{ display: "block", mt: 1 }}
                   >
-                    These {data!.lines.length} lines are {share}% of the
-                    category.
+                    {note}
                   </Typography>
                 )}
               </Box>

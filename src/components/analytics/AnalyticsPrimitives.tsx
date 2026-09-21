@@ -2,7 +2,7 @@
 
 import { Box, Chip, Paper, Stack, Typography } from "@mui/material";
 import { BarChart } from "@mui/x-charts/BarChart";
-import { formatMoney } from "@/utils/format";
+import { formatMoney, formatShare } from "@/utils/format";
 import type { NamedCount, NamedValue } from "@/types/entities";
 
 export const CHART_HEIGHT = 280;
@@ -233,5 +233,81 @@ export function DeltaChip({
       color={percent === 0 ? "default" : up ? "success" : "error"}
       label={`${up ? "+" : ""}${percent}%`}
     />
+  );
+}
+
+// The bar column. Set as a minimum as well as a width: the name column takes
+// every spare pixel, and a plain width on this one was squeezed to half.
+export const SHARE_COLUMN_WIDTH = 225;
+
+// A line's weight in a ranked list as a progress bar: filled in proportion to
+// the top line, so the ranking reads at a glance, with the line's share of the
+// whole (the category, or the supplier's range) printed over the middle of the
+// bar. Two scales on purpose: a bar filled to the share would make the top
+// line a sliver in a category of two hundred products, and say nothing.
+//
+// Green, the same as a growth chip: this is a positive quantity. Square at
+// the start and barely rounded at the end, so the bars read as one aligned
+// column rather than a stack of pills.
+export function ShareBar({
+  value,
+  max,
+  share,
+}: {
+  // How far the bar fills, against `max`. Null draws an empty track.
+  value: number | null;
+  max: number;
+  // What the label says. Null shows no label.
+  share: number | null;
+}) {
+  const width =
+    value !== null && max > 0 && value > 0
+      ? Math.min(Math.max((value / max) * 100, 2), 100)
+      : 0;
+  return (
+    <Box
+      sx={{
+        position: "relative",
+        height: 20,
+        borderRadius: "0 3px 3px 0",
+        bgcolor: "action.hover",
+        overflow: "hidden",
+      }}
+    >
+      <Box
+        sx={{
+          width: `${width}%`,
+          height: "100%",
+          borderRadius: "0 3px 3px 0",
+          bgcolor: "success.main",
+          opacity: 0.4,
+          transition: "width 350ms ease",
+        }}
+      />
+      {share !== null && (
+        <Typography
+          variant="caption"
+          sx={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            // The label sits on the track as often as on the fill, so it
+            // takes the green that contrasts with the page: the dark shade
+            // on cream, the light shade on a near-black ground, where the
+            // dark shade vanished.
+            color: (t) =>
+              t.palette.mode === "dark"
+                ? t.palette.success.light
+                : t.palette.success.dark,
+            fontWeight: 700,
+            lineHeight: 1,
+          }}
+        >
+          {formatShare(share)}
+        </Typography>
+      )}
+    </Box>
   );
 }

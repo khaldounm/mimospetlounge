@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CATEGORY_GROUPS } from "@/constants/analytics";
+import { CATEGORY_GROUPS, SUPPLIER_ITEM_ORDERS } from "@/constants/analytics";
 
 // The analytics sections that can be re-queried for a custom date range. The
 // snapshot section (inventory) is not time-boxed and so is not here.
@@ -78,6 +78,23 @@ export const categoryTopQuerySchema = z
   });
 
 export type CategoryTopQuery = z.infer<typeof categoryTopQuerySchema>;
+
+// Validates the "this supplier's best or slowest sellers" lookup. The range is
+// the purchases section's own, so the list describes the same window as the
+// figures it was opened from.
+export const supplierItemsQuerySchema = z
+  .object({
+    supplierId: z.coerce.number().int().positive(),
+    order: z.enum(SUPPLIER_ITEM_ORDERS),
+    from: dateString,
+    to: dateString,
+  })
+  .refine((d) => d.from <= d.to, {
+    message: "from must be on or before to",
+    path: ["from"],
+  });
+
+export type SupplierItemsQuery = z.infer<typeof supplierItemsQuerySchema>;
 
 // Validates the predictive item search. An empty query is allowed and returns a
 // starting page, so opening the picker shows something rather than a blank box.

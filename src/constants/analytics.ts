@@ -36,6 +36,27 @@ export type CategoryGroupKey = (typeof CATEGORY_GROUPS)[number]["key"];
 // when a category is opened, so the section itself stays as light as it was.
 export const CATEGORY_TOP_LIMIT = 15;
 
+// ---- Products by supplier ----
+
+// The two lists the purchases section can open for one supplier: its products
+// that sold the most units over the range, and the ones that sold the fewest.
+// Ranked on units rather than money on purpose. The bottom list exists so the
+// clinic can stop reordering what does not move, and ranked on revenue it would
+// fill with cheap lines that sell perfectly well.
+export const SUPPLIER_ITEM_ORDERS = ["top", "bottom"] as const;
+export type SupplierItemOrder = (typeof SUPPLIER_ITEM_ORDERS)[number];
+
+// What each list is called: on the button that opens it, in its title, and on
+// the PDF it is saved as.
+export const SUPPLIER_ITEM_ORDER_LABELS: Record<SupplierItemOrder, string> = {
+  top: "Best sellers",
+  bottom: "Slow sellers",
+};
+
+// How many lines either list shows. Ranked and cut in the database, so the
+// biggest supplier's year of sales comes back as fifteen rows.
+export const SUPPLIER_ITEMS_LIMIT = 15;
+
 // ---- Services ----
 
 // How many bars the "Top services by revenue" chart shows. The chart is the

@@ -807,6 +807,46 @@ export interface PurchasesAnalytics {
   inProgressNow: number; // value of orders placed but not yet fully delivered
   trend: { label: string; billed: number; paid: number }[];
   bySupplier: NamedValue[]; // top suppliers by amount billed within the range
+  // Who the "products by supplier" picker can be set to: every active supplier
+  // with at least one product filed under it. Carried with the section rather
+  // than fetched on its own, so the picker costs no request of its own.
+  suppliers: SupplierOption[];
+}
+
+export interface SupplierOption {
+  supplierId: number;
+  name: string;
+}
+
+// ── Products by supplier ─────────────────────────────────────
+//
+// One supplier's products ranked on net units sold over a window, read off the
+// invoice lines like the category dialog: billed, never collected, returns net
+// off. A product is the supplier's through InventoryItem.supplierId, the same
+// link the reorder basket and the supplier page count by.
+export interface SupplierItemLine {
+  itemId: number;
+  name: string;
+  units: number; // net units over the range (sold less returned)
+  revenue: number; // net billed for those units
+}
+
+export interface SupplierItemLines {
+  supplierId: number;
+  order: "top" | "bottom";
+  // Every product of this supplier that sold over the range, so the browser
+  // can work out each line's share and say how much of the whole the list is.
+  total: {
+    units: number;
+    revenue: number;
+    items: number; // distinct products with at least one line in the range
+    maxUnits: number; // the best seller's units, which every bar is drawn against
+  };
+  // Active products filed under this supplier with no sale line in the range.
+  // Counted, not listed: over a month that is most of a big supplier's range,
+  // and fifteen arbitrary names from it would say less than the number does.
+  unsoldItems: number;
+  lines: SupplierItemLine[];
 }
 
 // ── Category performance (period over period) ────────────────

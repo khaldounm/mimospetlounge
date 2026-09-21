@@ -23,10 +23,12 @@ import {
   GROOMING_SERVICE_CATEGORY,
   ITEM_SEARCH_LIMIT,
   NON_TRADE_SERVICE_CATEGORIES,
+  SUPPLIER_ITEMS_LIMIT,
   TOP_ITEMS_LIMIT,
   TOP_SERVICES_LIMIT,
   UNCATEGORISED_LABEL,
   type CategoryGroupKey,
+  type SupplierItemOrder,
 } from "@/constants/analytics";
 import type { AnalyticsSection, ClientListKind } from "@/schemas/analytics";
 import type { ComparisonMode } from "@/utils/date-range";
@@ -51,6 +53,8 @@ import type {
   ProfitAnalytics,
   PurchasesAnalytics,
   RevenueAnalytics,
+  SupplierItemLine,
+  SupplierItemLines,
 } from "@/types/entities";
 
 // Invoice statuses that represent real, billable revenue (Draft is not yet
@@ -1680,69 +1684,88 @@ async function getPurchasesSection(
   const { from: dateFrom, toExclusive: dateToExclusive } =
     dateOnlyBounds(range);
 
-  const [billedOrders, payments, allOrders, allPayments, openingBalances] =
-    await Promise.all([
-      // An order is billed on the date it reached Received, which is what billedOn
-      // records. receivedOn marks the first of possibly several deliveries and
-      // would land a part-delivered order in the wrong period.
-      prisma.purchaseOrder.findMany({
-        where: {
-          deletedAt: null,
-          status: "Received",
-          billedOn: { gte: dateFrom, lt: dateToExclusive },
-        },
-        select: {
-          billedOn: true,
-          discountAmount: true,
-          shippingAmount: true,
-          taxAmount: true,
-          supplier: { select: { name: true } },
-          lines: { select: { quantityOrdered: true, unitCost: true } },
-        },
-      }),
-      // Cash only. A credit note settles a bill without any money leaving the
-      // clinic, so counting it here would report a month as having spent what the
-      // supplier actually wrote off. The balance figures below deliberately do NOT
-      // make this distinction: a credit reduces what is owed exactly as a payment
-      // does.
-      prisma.supplierPayment.findMany({
-        where: {
-          deletedAt: null,
-          kind: { not: "Credit" },
-          paidOn: { gte: dateFrom, lt: dateToExclusive },
-        },
-        select: { paidOn: true, amount: true },
-      }),
-      // Everything, for the as-of-now position: balances are a point in time, so
-      // they are not confined to the range.
-      prisma.purchaseOrder.findMany({
-        where: { deletedAt: null, supplierId: { not: null } },
-        select: {
-          supplierId: true,
-          status: true,
-          discountAmount: true,
-          shippingAmount: true,
-          taxAmount: true,
-          lines: { select: { quantityOrdered: true, unitCost: true } },
-        },
-      }),
-      // Every kind, unlike the range-scoped query above: this one builds what is
-      // owed, and a credit note settles a bill just as a payment does.
-      prisma.supplierPayment.groupBy({
-        by: ["supplierId"],
-        where: { deletedAt: null },
-        _sum: { amount: true },
-      }),
-      // The balance each account was opened with. Without it the position is not
-      // merely incomplete, it can have the wrong sign: a supplier paid more than
-      // this system has ever billed them reads as being in credit when an opening
-      // balance means money is still owed.
-      prisma.openingBalance.groupBy({
-        by: ["supplierId"],
-        where: { supplierId: { not: null } },
-        _sum: { amount: true },
-      }),
-    ]);
+  const [
+    billedOrders,
+    payments,
+    allOrders,
+    allPayments,
+    openingBalances,
+    suppliers,
+  ] = await Promise.all([
+    // An order is billed on the date it reached Received, which is what billedOn
+    // records. receivedOn marks the first of possibly several deliveries and
+    // would land a part-delivered order in the wrong period.
+    prisma.purchaseOrder.findMany({
+      where: {
+        deletedAt: null,
+        status: "Received",
+        billedOn: { gte: dateFrom, lt: dateToExclusive },
+      },
+      select: {
+        billedOn: true,
+        discountAmount: true,
+        shippingAmount: true,
+        taxAmount: true,
+        supplier: { select: { name: true } },
+        lines: { select: { quantityOrdered: true, unitCost: true } },
+      },
+    }),
+    // Cash only. A credit note settles a bill without any money leaving the
+    // clinic, so counting it here would report a month as having spent what the
+    // supplier actually wrote off. The balance figures below deliberately do NOT
+    // make this distinction: a credit reduces what is owed exactly as a payment
+    // does.
+    prisma.supplierPayment.findMany({
+      where: {
+        deletedAt: null,
+        kind: { not: "Credit" },
+        paidOn: { gte: dateFrom, lt: dateToExclusive },
+      },
+      select: { paidOn: true, amount: true },
+    }),
+    // Everything, for the as-of-now position: balances are a point in time, so
+    // they are not confined to the range.
+    prisma.purchaseOrder.findMany({
+      where: { deletedAt: null, supplierId: { not: null } },
+      select: {
+        supplierId: true,
+        status: true,
+        discountAmount: true,
+        shippingAmount: true,
+        taxAmount: true,
+        lines: { select: { quantityOrdered: true, unitCost: true } },
+      },
+    }),
+    // Every kind, unlike the range-scoped query above: this one builds what is
+    // owed, and a credit note settles a bill just as a payment does.
+    prisma.supplierPayment.groupBy({
+      by: ["supplierId"],
+      where: { deletedAt: null },
+      _sum: { amount: true },
+    }),
+    // The balance each account was opened with. Without it the position is not
+    // merely incomplete, it can have the wrong sign: a supplier paid more than
+    // this system has ever billed them reads as being in credit when an opening
+    // balance means money is still owed.
+    prisma.openingBalance.groupBy({
+      by: ["supplierId"],
+      where: { supplierId: { not: null } },
+      _sum: { amount: true },
+    }),
+    // Who the "products by supplier" picker can be set to. Only a supplier
+    // with products filed under it can have a best or slowest seller, so the
+    // rest are left off rather than offered and found empty. Two columns per
+    // row, so carrying it with the section costs less than a request would.
+    prisma.supplier.findMany({
+      where: {
+        deletedAt: null,
+        isActive: true,
+        items: { some: { deletedAt: null } },
+      },
+      select: { supplierId: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
 
   const orderValue = (o: {
     discountAmount: { toNumber(): number } | null;
@@ -1858,6 +1881,121 @@ async function getPurchasesSection(
       .map(([label, value]) => ({ label, value: round2(value) }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 8),
+    suppliers,
+  };
+}
+
+// ---- products by supplier ----
+
+// One row of the ranked query. The item columns are null on the row that
+// comes back when nothing sold, which carries the totals and nothing else.
+type SupplierItemRow = {
+  item_id: number | null;
+  name: string | null;
+  units: Prisma.Decimal | null;
+  revenue: Prisma.Decimal | null;
+  total_units: Prisma.Decimal;
+  total_revenue: Prisma.Decimal;
+  max_units: Prisma.Decimal;
+  sold_items: bigint;
+  unsold_items: bigint;
+};
+
+/**
+ * One supplier's products ranked on net units sold over the window: the
+ * fifteen that sold the most, or the fifteen that sold the fewest. Read off
+ * the invoice lines under the same rules as the category dialog (traded
+ * invoices, hidden lines out, returns net off), over the products filed under
+ * the supplier through InventoryItem.supplierId.
+ *
+ * Ranked and cut in the database, with the supplier's totals joined onto the
+ * rows, so the biggest supplier's year of lines comes back as fifteen rows and
+ * four totals rather than every product it sold. Shares are worked out in the
+ * browser from those. The direction is a multiplier rather than a SQL
+ * fragment: one prepared statement serves both lists, and nothing from the
+ * request is ever spliced into the query text.
+ *
+ * The one row that comes back when nothing sold still carries the totals, so
+ * the dialog can say how many of the supplier's products went unsold.
+ */
+export async function getSupplierItemLines(
+  supplierId: number,
+  order: SupplierItemOrder,
+  range: AnalyticsRange,
+): Promise<SupplierItemLines> {
+  const { from, toExclusive } = rangeBounds(range);
+  // -1 puts the biggest first.
+  const sign = order === "top" ? -1 : 1;
+
+  const rows = await prisma.$queryRaw<SupplierItemRow[]>`
+    WITH sold AS (
+      SELECT it.item_id, it.name,
+             SUM(l.quantity)   AS units,
+             SUM(l.line_total) AS revenue
+      FROM invoice_line_items l
+      JOIN invoices i ON i.invoice_id = l.invoice_id
+      JOIN inventory_items it ON it.item_id = l.item_id
+      WHERE it.supplier_id = ${supplierId}
+        -- Clinic use, never billed. Same rule as the category totals.
+        AND l.is_hidden = false
+        AND i.status = ANY(${REVENUE_STATUSES})
+        AND i.issued_at >= ${from} AND i.issued_at < ${toExclusive}
+      GROUP BY it.item_id
+    ),
+    ranked AS (
+      SELECT item_id, name, units, revenue
+      FROM sold
+      ORDER BY units * ${sign}::int, revenue * ${sign}::int, name
+      LIMIT ${SUPPLIER_ITEMS_LIMIT}
+    ),
+    whole AS (
+      SELECT COALESCE(SUM(units), 0)   AS total_units,
+             COALESCE(SUM(revenue), 0) AS total_revenue,
+             COALESCE(MAX(units), 0)   AS max_units,
+             COUNT(*)                  AS sold_items,
+             -- A product still on the books that did not sell at all. A
+             -- deleted product is left out here and kept in "sold", where a
+             -- sale it made before it was retired still counts.
+             (SELECT COUNT(*)
+              FROM inventory_items u
+              WHERE u.supplier_id = ${supplierId}
+                AND u.deleted_at IS NULL
+                AND NOT EXISTS (SELECT 1 FROM sold WHERE sold.item_id = u.item_id)
+             ) AS unsold_items
+      FROM sold
+    )
+    -- LEFT JOIN from the totals, so a supplier that sold nothing still
+    -- answers with one row of zeros rather than with no rows at all.
+    SELECT r.item_id, r.name, r.units, r.revenue,
+           w.total_units, w.total_revenue, w.max_units,
+           w.sold_items, w.unsold_items
+    FROM whole w
+    LEFT JOIN ranked r ON TRUE
+    ORDER BY r.units * ${sign}::int, r.revenue * ${sign}::int, r.name`;
+
+  const whole = rows[0];
+  const lines: SupplierItemLine[] = [];
+  for (const r of rows) {
+    if (r.item_id === null) continue;
+    lines.push({
+      itemId: r.item_id,
+      name: r.name ?? `Item #${r.item_id}`,
+      units: Math.round((r.units?.toNumber() ?? 0) * 1000) / 1000,
+      revenue: round2(r.revenue?.toNumber() ?? 0),
+    });
+  }
+
+  return {
+    supplierId,
+    order,
+    total: {
+      units: Math.round((whole?.total_units.toNumber() ?? 0) * 1000) / 1000,
+      revenue: round2(whole?.total_revenue.toNumber() ?? 0),
+      items: Number(whole?.sold_items ?? 0),
+      maxUnits: Math.round((whole?.max_units.toNumber() ?? 0) * 1000) / 1000,
+    },
+    unsoldItems: Number(whole?.unsold_items ?? 0),
+    lines,
   };
 }
 

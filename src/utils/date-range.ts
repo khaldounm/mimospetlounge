@@ -199,10 +199,14 @@ export function formatRangeLabel(range: AnalyticsRange): string {
     year: "numeric",
   };
   if (range.from === range.to) return to.toLocaleDateString("en-US", full);
-  const fromStr = from.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
+  // The year is said once when both ends share it. A range that crosses a
+  // year end says it on both, or "Sep 21 - Sep 21, 2026" reads as one day.
+  const fromStr = from.toLocaleDateString(
+    "en-US",
+    from.getFullYear() === to.getFullYear()
+      ? { month: "short", day: "numeric" }
+      : full,
+  );
   return `${fromStr} - ${to.toLocaleDateString("en-US", full)}`;
 }
 

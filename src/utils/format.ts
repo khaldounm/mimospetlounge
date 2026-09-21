@@ -86,6 +86,15 @@ export function formatMoney(value: string | number | null | undefined): string {
 // month rail where twelve figures sit side by side. Rounds to a short form
 // ("$2K", "$1.5K") rather than wrapping or truncating; anything that needs to be
 // read to the cent uses formatMoney instead.
+// A share of a whole as a percentage label. Whole numbers, except under one
+// percent, where "0%" would say a line that made a ranked list sold nothing:
+// those keep a decimal, and under a tenth read "<0.1%". The slowest sellers of
+// a big supplier all live down here.
+export function formatShare(share: number): string {
+  if (share >= 1 || share <= 0) return `${Math.round(share)}%`;
+  return share < 0.1 ? "<0.1%" : `${share.toFixed(1)}%`;
+}
+
 export function formatMoneyCompact(
   value: string | number | null | undefined,
 ): string {
