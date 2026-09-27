@@ -71,3 +71,23 @@ Never use the em dash character `—` (U+2014). This applies to:
 - Range / compound modifier → hyphen: `2015-2020`, `world-class`
 
 The en dash (`–`, U+2013) is also off the table by extension — same character family, same vibe the user is rejecting.
+
+---
+
+name: Use the graphify knowledge graph first
+description: A code graph of this repo lives in graphify-out/; query it before grepping or reading files
+type: feedback
+
+---
+
+This repo has a graphify knowledge graph at `graphify-out/` (`graph.json`, `GRAPH_REPORT.md`): every file, symbol and call edge, clustered into communities.
+
+- At the start of a session, run `graphify update .` so the graph matches the latest commit. It is AST-only: no LLM, no cost, a few seconds.
+- For any codebase question, run `graphify query "<question>"` first. Use `graphify path "<A>" "<B>"` for how two things connect and `graphify explain "<concept>"` for one concept.
+- Read `graphify-out/GRAPH_REPORT.md` only for broad architecture reviews, or when query/path/explain do not surface enough.
+- After modifying code, run `graphify update .` again.
+- If `graphify-out/` is missing (it is gitignored), build it with `/graphify .`.
+
+**Why:** The user asked on 2026-09-27 for the graph to be used by default, instead of re-exploring the codebase file by file every session.
+
+**How to apply:** The graph is the map, the source files are the territory. Query first, then open only the files the graph names, and cite its `source_location` when saying where something lives.
