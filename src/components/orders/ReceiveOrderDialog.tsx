@@ -327,8 +327,10 @@ function ReceiveForm({
   // moves the rest to a new order. Only asked when the delivery IS short.
   const [remainder, setRemainder] = useState<"keep" | "split">("keep");
   // The VAT printed on the supplier's bill. VAT belongs to the whole bill, so it
-  // lives on the order: seeded from there, and saved back there only once the
-  // receipt is confirmed, so cancelling this dialog changes nothing.
+  // lives on the order: seeded from there, and saved back there with the
+  // receipt itself, so cancelling this dialog changes nothing. A short delivery
+  // keeps it too. The clinic is billed per delivery, so the bill in hand is for
+  // what arrived, whatever becomes of the rest.
   const [vat, setVat] = useState(order.taxAmount ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -361,9 +363,7 @@ function ReceiveForm({
   const isReturn = outstanding.some((l) => Number(l.quantityOrdered) < 0);
   const offerSplit = partial && entered.length > 0 && !isReturn;
   const splitting = offerSplit && remainder === "split";
-  // Header fields, VAT among them, only take edits on a Draft or Placed order.
-  // A Partial one has stock booked against it already. The order page's rule.
-  const orderEditable = order.status === "Draft" || order.status === "Placed";
+  const keepingOpen = offerSplit && !splitting;
 
   // A line raised in kilos is received in kilos. The pack size is recoverable
   // from the line itself (200 kg ordered as 10 bags means 20 per bag), so
@@ -440,13 +440,6 @@ function ReceiveForm({
     vat.trim() !== "" && !(Number.isFinite(Number(vat)) && Number(vat) >= 0);
   const vatValue =
     vat.trim() === "" || vatInvalid ? "" : Number(vat).toFixed(2);
-  // What the order's VAT will be when the delivery books. A figure typed here
-  // is saved first on a delivery that completes the order. A split never shows
-  // the box, and works its VAT out from the order as saved, so it reads that.
-  const effectiveVat =
-    orderEditable && !splitting
-      ? Number(vatValue || 0)
-      : Number(order.taxAmount ?? 0);
 
   // The bill this receipt closes, laid out the way the supplier prints it. This
   // is the check whoever is at the door actually performs: the supplier's bill
@@ -460,16 +453,19 @@ function ReceiveForm({
   // surfaced later as a supplier balance nobody could explain.
   //
   // It mirrors what receiveOrder and splitRemainderTx book:
-  //  - a delivery that completes the order carries the order's discount,
-  //    delivery charge and VAT as they stand;
+  //  - a delivery that completes the order carries the order's discount and
+  //    delivery charge as they stand;
   //  - a split closes the order at what arrived: the discount is shared by
-  //    goods value, delivery stays, and VAT is worked out again at the rate;
-  //  - a short delivery that leaves the order open closes no bill yet, and a
-  //    return credits goods alone, so both show the goods and nothing more.
+  //    goods value and delivery stays;
+  //  - a short delivery that leaves the order open books neither yet, since
+  //    the order is no bill until the rest arrives;
+  //  - and in all three the VAT is the box below, which the order keeps as
+  //    typed. A short delivery used to drop it (left open) or work it out
+  //    again at the rate (split), so a bill where only some lines carry VAT
+  //    could not be made to agree, and the receipt was abandoned at the door.
+  // A return credits goods alone, so it shows the goods and nothing more.
   const bill = (() => {
-    if (entered.length === 0 || isReturn || (partial && !splitting)) {
-      return null;
-    }
+    if (entered.length === 0 || isReturn) return null;
     const lines = order.lines ?? [];
     // Stock booked by an earlier delivery lands on the same bill.
     const earlier = lines.reduce(
@@ -478,7 +474,9 @@ function ReceiveForm({
       0,
     );
     const kept = earlier + goods;
-    let discount = Math.max(Number(order.discountAmount ?? 0), 0);
+    let discount = keepingOpen
+      ? 0
+      : Math.max(Number(order.discountAmount ?? 0), 0);
     if (splitting && discount > 0) {
       // What moves to the new order, at the cost each line carries once this
       // delivery is in. The discount follows goods value across the two.
@@ -506,17 +504,13 @@ function ReceiveForm({
         discount = roundMoney((discount * kept) / (kept + moved));
       }
     }
-    const shipping = Math.max(Number(order.shippingAmount ?? 0), 0);
+    const shipping = keepingOpen
+      ? 0
+      : Math.max(Number(order.shippingAmount ?? 0), 0);
     const base = kept - discount + shipping;
     const rate = Number(order.taxRate ?? DEFAULT_VAT_RATE);
     const atRate = roundMoney((base * rate) / 100);
-    // A split replaces the VAT with its own figure, but only on an order that
-    // has some: zero and blank both mean "no VAT" and stay that way.
-    const vatAmount = splitting
-      ? effectiveVat > 0
-        ? atRate
-        : 0
-      : effectiveVat;
+    const vatAmount = Number(vatValue || 0);
     return {
       earlier,
       discount,
@@ -529,32 +523,36 @@ function ReceiveForm({
     };
   })();
 
-  const vatEditable = bill != null && orderEditable && !splitting;
-  const vatDirty =
-    vatEditable && !vatInvalid && vatValue !== (order.taxAmount ?? "");
   // A VAT that is not the rate applied to its bill usually means a price was
   // keyed wrong rather than the VAT: the VAT is copied off the bill in one go,
-  // the prices a line at a time. A split works its own VAT out, so there is
-  // nothing to compare it with.
+  // the prices a line at a time.
   const vatOff =
     bill != null &&
-    !splitting &&
     bill.vat > 0 &&
     Math.abs(bill.vat - bill.atRate) >= VAT_TOLERANCE;
-  const vatCaption = splitting
-    ? effectiveVat > 0
-      ? `Worked out again at ${bill?.rate}% of what arrived. The order had ${formatMoney(effectiveVat)}.`
-      : "The order has no VAT, so the split adds none."
-    : "As set on the order.";
+  // Left open, the order's own discount and delivery charge wait for the rest,
+  // which is worth saying when it has either: the paper may already show them.
+  const chargesWait =
+    keepingOpen &&
+    (Number(order.discountAmount ?? 0) > 0 ||
+      Number(order.shippingAmount ?? 0) > 0);
   const summaryNote = isReturn
     ? "Goods going back to the supplier."
-    : entered.length === 0
+    : bill == null
       ? "Enter what arrived to see the bill."
-      : bill == null
-        ? "Goods only. The order stays open, so its VAT and charges are settled when the rest arrives."
-        : bill.earlier > 0
-          ? "This order came in more than one delivery, so the total covers all of them."
-          : "Check the bill total against the supplier's bill before receiving.";
+      : [
+          // One VAT figure covers the order, so a bill that is not its first
+          // adds to what the earlier ones left there.
+          bill.earlier > 0
+            ? "This order came in more than one delivery, so the total and its VAT cover all of them. Add this bill's VAT to what is already there."
+            : "Check the bill total against the supplier's bill before receiving.",
+          keepingOpen &&
+            (chargesWait
+              ? "The order stays open with this VAT on it. Its discount and delivery charge are settled when the rest arrives."
+              : "The order stays open with this VAT on it."),
+        ]
+          .filter(Boolean)
+          .join(" ");
 
   const anyMissingCost = outstanding.some(missingCost);
   const anyBadDiscount = outstanding.some(badDiscount);
@@ -738,19 +736,6 @@ function ReceiveForm({
 
     setSaving(true);
     try {
-      // Through the order's own update, the one the order page uses, and before
-      // the delivery books, so the receipt and a split (which only works VAT
-      // out again on an order that has some) both see the figure on the bill.
-      if (vatDirty) {
-        const updated = await apiRequest<{ order: PurchaseOrderDTO }>(
-          `/api/orders/${order.orderId}`,
-          {
-            method: "PATCH",
-            body: { taxAmount: vatValue === "" ? null : vatValue },
-          },
-        );
-        onOrderChanged(updated.order);
-      }
       const res = await apiRequest<{
         order: PurchaseOrderDTO;
         splitOrder: PurchaseOrderDTO | null;
@@ -763,6 +748,11 @@ function ReceiveForm({
           // ignores it on a complete one anyway, so a stale choice cannot
           // split a full order.
           splitRemainder: splitting,
+          // With the delivery rather than through the order's own update
+          // first, so the two land together, and so a part-delivered order,
+          // whose header the order page no longer edits, still takes its VAT.
+          // A return shows no bill, so it sends none.
+          ...(isReturn ? {} : { taxAmount: vatValue === "" ? null : vatValue }),
         },
       });
       onReceived(res.order, res.splitOrder);
@@ -1247,39 +1237,40 @@ function ReceiveForm({
                     {formatMoney(bill.shipping)}
                   </BillRow>
                 )}
-                {bill &&
-                  (vatEditable ? (
-                    <BillRow
-                      label="VAT"
-                      caption={`${bill.rate}% of ${formatMoney(bill.base)} is ${formatMoney(bill.atRate)}`}
-                      captionColor={vatOff ? "warning.main" : "text.secondary"}
-                    >
-                      <TextField
-                        type="number"
-                        size="small"
-                        value={vat}
-                        onChange={(e) => setVat(e.target.value)}
-                        error={vatInvalid}
-                        placeholder="0.00"
-                        slotProps={{
-                          htmlInput: {
-                            min: 0,
-                            step: "0.01",
-                            "aria-label": "VAT on the supplier's bill",
-                          },
-                        }}
-                        sx={{ width: 120 }}
-                      />
-                    </BillRow>
-                  ) : (
-                    <BillRow label="VAT" caption={vatCaption}>
-                      {formatMoney(bill.vat)}
-                    </BillRow>
-                  ))}
+                {bill && (
+                  <BillRow
+                    label="VAT"
+                    caption={`${bill.rate}% of ${formatMoney(bill.base)} is ${formatMoney(bill.atRate)}`}
+                    captionColor={vatOff ? "warning.main" : "text.secondary"}
+                  >
+                    <TextField
+                      type="number"
+                      size="small"
+                      value={vat}
+                      onChange={(e) => setVat(e.target.value)}
+                      error={vatInvalid}
+                      placeholder="0.00"
+                      slotProps={{
+                        htmlInput: {
+                          min: 0,
+                          step: "0.01",
+                          "aria-label": "VAT on the supplier's bill",
+                        },
+                      }}
+                      sx={{ width: 120 }}
+                    />
+                  </BillRow>
+                )}
                 {bill && (
                   <BillRow
                     strong
-                    label={bill.earlier > 0 ? "Order total" : "Bill total"}
+                    label={
+                      bill.earlier === 0
+                        ? "Bill total"
+                        : keepingOpen
+                          ? "Total so far"
+                          : "Order total"
+                    }
                   >
                     {formatMoney(bill.total)}
                   </BillRow>
@@ -1298,9 +1289,9 @@ function ReceiveForm({
               <Alert severity="warning">
                 A VAT of {formatMoney(bill.vat)} is not {bill.rate}% of this
                 bill: {bill.rate}% of {formatMoney(bill.base)} is{" "}
-                {formatMoney(bill.atRate)}. If the VAT is what the
-                supplier&apos;s bill says, a price above was probably typed
-                wrong.
+                {formatMoney(bill.atRate)}. That is expected when only some
+                lines on the bill carry VAT. If they all do, a price above was
+                probably typed wrong.
               </Alert>
             )}
 
@@ -1423,9 +1414,9 @@ function ReceiveForm({
                     color="text.secondary"
                     sx={{ display: "block", mt: 0.5 }}
                   >
-                    Any discount is shared by goods value, delivery stays on
-                    this order, and VAT is worked out again at the order&apos;s
-                    rate on each side. The new order is still editable.
+                    Any discount is shared by goods value. Delivery and the VAT
+                    above stay on this order. The new order starts with no VAT,
+                    ready for its own bill when the rest arrives.
                   </Typography>
                 )}
               </Alert>

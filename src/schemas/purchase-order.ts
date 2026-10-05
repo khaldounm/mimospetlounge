@@ -193,6 +193,10 @@ export const receiveOrderSchema = z.object({
   // the same reason as markPlaced below: coercion would read "false" as true,
   // and this rewrites the order's lines.
   splitRemainder: z.boolean().optional(),
+  // The VAT printed on the supplier's bill, as typed in the receipt. The order
+  // keeps exactly this, short delivery or not. Omitted leaves the order's VAT
+  // alone; blank clears it.
+  taxAmount: optionalCharge,
 });
 
 // Bulk push from the inventory low-stock basket. Each line is routed to the

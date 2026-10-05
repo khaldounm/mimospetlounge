@@ -3,7 +3,6 @@ import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/api";
 import {
   DEFAULT_DISCOUNT_UNIT,
-  DEFAULT_VAT_RATE,
   OPEN_ORDER_STATUSES,
   type DiscountUnit,
   type OrderStatusFilter,
@@ -610,6 +609,11 @@ export async function receiveOrder(
     // the rest to a new order (see splitRemainderTx). Ignored on a complete
     // delivery, where there is nothing to move.
     splitRemainder?: boolean;
+    // The VAT on the supplier's bill, typed at the door. Saved with the
+    // delivery, whatever the order's status: a part-delivered order taking
+    // the rest comes with a bill too, and the order page cannot edit it.
+    // Undefined leaves the order's VAT alone.
+    taxAmount?: number | null;
   } = {},
 ): Promise<ReceiveOrderResult> {
   const order = await prisma.purchaseOrder.findFirst({
@@ -844,6 +848,10 @@ export async function receiveOrder(
                 ...(complete ? { billedOn: when } : {}),
               }
             : {}),
+          // Kept exactly as typed, split or not: the split leaves VAT alone.
+          ...(options.taxAmount !== undefined
+            ? { taxAmount: options.taxAmount }
+            : {}),
           // First delivery stamps the date and later ones leave it, so this
           // reads as "when stock started arriving".
           ...(order.receivedOn ? {} : { receivedOn: when }),
@@ -892,10 +900,13 @@ function scaleLoose(
  * the supplier already holds the order for it, and still editable there.
  *
  * Charges: a discount is shared pro rata by goods value, delivery stays with
- * the delivery that happened, and where a VAT amount was set it is worked out
- * again at the order's rate on each side. The old amount was for the whole
- * order, so keeping it would tax goods that have not arrived. The new order is
- * editable, so its charges can be corrected against the bill when it comes.
+ * the delivery that happened, and the VAT stays on this order untouched. It is
+ * typed off the bill for what arrived, and that bill is what this order now
+ * is. The new order starts with no VAT and takes its own off the bill for the
+ * rest. VAT used to be worked out again at the order's rate on each side,
+ * which never matched a bill where only some lines carry VAT, and moved part
+ * of the typed figure onto the new order. The new order is editable, so its
+ * charges can be corrected against the bill when it comes.
  *
  * A return document (negative lines) is refused: it is one instruction to the
  * supplier, and closing it "at what went back" has no bill behind it.
@@ -951,8 +962,7 @@ export async function splitRemainderTx(
   const goods = kept.plus(moved);
   const keptShare = goods.greaterThan(0) ? kept.dividedBy(goods) : D(1);
 
-  // Zero is "none" for both charges, the same way the DTO reads them, so an
-  // order with no VAT does not acquire some on the way through here.
+  // Zero is "none", the same way the DTO reads it.
   const discount = order.discountAmount?.greaterThan(0)
     ? order.discountAmount
     : null;
@@ -961,15 +971,6 @@ export async function splitRemainderTx(
     : null;
   const movedDiscount =
     discount && keptDiscount ? discount.minus(keptDiscount) : null;
-
-  const taxed = order.taxAmount?.greaterThan(0) ?? false;
-  const rate = order.taxRate ?? D(DEFAULT_VAT_RATE);
-  const vatOn = (base: Prisma.Decimal) =>
-    base.times(rate).dividedBy(100).toDecimalPlaces(2);
-  const keptTax = taxed
-    ? vatOn(kept.minus(keptDiscount ?? 0).plus(order.shippingAmount ?? 0))
-    : order.taxAmount;
-  const movedTax = taxed ? vatOn(moved.minus(movedDiscount ?? 0)) : null;
 
   const created = await tx.purchaseOrder.create({
     data: {
@@ -981,7 +982,6 @@ export async function splitRemainderTx(
       orderedOn: order.orderedOn ?? when,
       taxRate: order.taxRate,
       discountAmount: movedDiscount?.greaterThan(0) ? movedDiscount : null,
-      taxAmount: movedTax?.greaterThan(0) ? movedTax : null,
       splitFromOrderId: orderId,
       createdBy: performedBy,
       lines: {
@@ -1029,7 +1029,6 @@ export async function splitRemainderTx(
       status: "Received",
       billedOn: when,
       discountAmount: keptDiscount,
-      taxAmount: keptTax,
     },
   });
 

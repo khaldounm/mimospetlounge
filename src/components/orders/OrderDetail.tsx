@@ -307,7 +307,7 @@ export default function OrderDetail({
   async function splitRest() {
     if (
       !window.confirm(
-        "Close this order at what has arrived and move the rest to a new order? This order becomes a bill for the delivered goods; the new order carries the rest at the same prices.",
+        "Close this order at what has arrived and move the rest to a new order? This order becomes a bill for the delivered goods and keeps its VAT. The new order carries the rest at the same prices, with no VAT until its own bill arrives.",
       )
     ) {
       return;

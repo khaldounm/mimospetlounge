@@ -22,7 +22,7 @@ export async function POST(
       data.lines,
       session.user.userId,
       data.receivedOn,
-      { splitRemainder: data.splitRemainder },
+      { splitRemainder: data.splitRemainder, taxAmount: data.taxAmount },
     );
     await writeAudit(session, {
       action: "stock",
@@ -32,6 +32,7 @@ export async function POST(
         status: order.status,
         receivedOn: order.receivedOn,
         lines: data.lines.filter((l) => l.quantity > 0),
+        ...(data.taxAmount !== undefined ? { taxAmount: data.taxAmount } : {}),
         ...(splitOrderId != null ? { splitInto: splitOrderId } : {}),
       },
     });
