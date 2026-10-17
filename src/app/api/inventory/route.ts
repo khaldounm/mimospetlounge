@@ -10,6 +10,7 @@ import {
 } from "@/lib/inventory";
 import { writeAudit } from "@/lib/audit";
 import { inventoryItemCreateSchema } from "@/schemas/inventory";
+import { INVENTORY_EXPIRY_FILTERS } from "@/types/enums";
 
 export async function GET(request: Request) {
   return handle(async () => {
@@ -25,6 +26,7 @@ export async function GET(request: Request) {
         category: sp.get("category")?.trim() || undefined,
         q: sp.get("q")?.trim() || undefined,
         lowStock: sp.get("lowStock") === "true",
+        expiry: INVENTORY_EXPIRY_FILTERS.find((f) => f === sp.get("expiry")),
         supplier: sp.get("supplier")?.trim() || undefined,
         page: pageRaw ? Number(pageRaw) : 1,
       },

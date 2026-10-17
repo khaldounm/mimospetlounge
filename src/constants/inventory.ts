@@ -43,3 +43,7 @@ export const LABEL_BARCODE_MAX_HEIGHT_MM =
 // moved, so an order open in another tab can pick the change up. See
 // useInventoryChanges.
 export const INVENTORY_CHANGES_CHANNEL = "inventory-changes";
+
+// How far ahead "expiring soon" looks, shared by the inventory filter and the
+// analytics card so both mean the same 30 days.
+export const EXPIRING_SOON_DAYS = 30;

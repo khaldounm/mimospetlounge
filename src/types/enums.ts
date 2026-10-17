@@ -13,6 +13,11 @@ export const RECORD_TYPES = [
 ] as const;
 export type RecordType = (typeof RECORD_TYPES)[number];
 
+// The inventory list's expiry filter. "soon" is within EXPIRING_SOON_DAYS and
+// not yet past, matching the analytics card.
+export const INVENTORY_EXPIRY_FILTERS = ["expired", "soon"] as const;
+export type InventoryExpiryFilter = (typeof INVENTORY_EXPIRY_FILTERS)[number];
+
 export const BOOKING_STATUSES = [
   "Scheduled",
   "Confirmed",

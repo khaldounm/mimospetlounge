@@ -27,6 +27,8 @@ import ShoppingCartIcon from "@mui/icons-material/ShoppingCart";
 import { apiRequest } from "@/utils/api-client";
 import { formatDate, formatMoney } from "@/utils/format";
 import type { InventoryItemDTO, SupplierDTO } from "@/types/entities";
+import type { InventoryExpiryFilter } from "@/types/enums";
+import { EXPIRING_SOON_DAYS } from "@/constants/inventory";
 import TablePaginationBar from "@/components/ui/TablePaginationBar";
 import type { InventoryCategoryCount } from "@/lib/inventory";
 import AddToOrderDialog from "@/components/orders/AddToOrderDialog";
@@ -77,6 +79,9 @@ export default function InventoryTable({
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [expiryFilter, setExpiryFilter] = useState<InventoryExpiryFilter | "">(
+    "",
+  );
   const [supplierFilter, setSupplierFilter] = useState(initialSupplierFilter);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -88,10 +93,17 @@ export default function InventoryTable({
   // category from the route, and a bare function would be a new value on every
   // render.
   const load = useCallback(
-    async (q: string, lowStock: boolean, supplier: string, p: number) => {
+    async (
+      q: string,
+      lowStock: boolean,
+      expiry: InventoryExpiryFilter | "",
+      supplier: string,
+      p: number,
+    ) => {
       const params = new URLSearchParams();
       if (q.trim()) params.set("q", q.trim());
       if (lowStock) params.set("lowStock", "true");
+      if (expiry) params.set("expiry", expiry);
       if (supplier) params.set("supplier", supplier);
       // The category comes from the route, not from client state, so reloading
       // this URL shows the same rows.
@@ -118,11 +130,11 @@ export default function InventoryTable({
       return;
     }
     const t = setTimeout(
-      () => void load(query, lowStockOnly, supplierFilter, page),
+      () => void load(query, lowStockOnly, expiryFilter, supplierFilter, page),
       300,
     );
     return () => clearTimeout(t);
-  }, [query, lowStockOnly, supplierFilter, page, load]);
+  }, [query, lowStockOnly, expiryFilter, supplierFilter, page, load]);
 
   // A new filter invalidates the current offset.
   function changeFilter(next: () => void) {
@@ -231,6 +243,24 @@ export default function InventoryTable({
             ))}
           </TextField>
         )}
+        <TextField
+          select
+          label="Expiry"
+          value={expiryFilter}
+          onChange={(e) =>
+            changeFilter(() =>
+              setExpiryFilter(e.target.value as InventoryExpiryFilter | ""),
+            )
+          }
+          size="small"
+          sx={{ minWidth: 200 }}
+        >
+          <MenuItem value="">All products</MenuItem>
+          <MenuItem value="expired">Expired</MenuItem>
+          <MenuItem value="soon">
+            Expiring in {EXPIRING_SOON_DAYS} days
+          </MenuItem>
+        </TextField>
         <FormControlLabel
           control={
             <Switch
@@ -407,7 +437,9 @@ export default function InventoryTable({
         canSeeCost={canSeeCost}
         canCreateSuppliers={canCreateSuppliers}
         onClose={() => setDialogOpen(false)}
-        onSaved={() => void load(query, lowStockOnly, supplierFilter, page)}
+        onSaved={() =>
+          void load(query, lowStockOnly, expiryFilter, supplierFilter, page)
+        }
       />
 
       <AddToOrderDialog

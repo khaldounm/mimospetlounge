@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/api";
 import { computePartnerPayable, effectiveRates } from "@/lib/partners";
 import { BOOKING_STATUSES } from "@/types/enums";
+import { EXPIRING_SOON_DAYS } from "@/constants/inventory";
 import {
   buildBuckets,
   bucketKeyOf,
@@ -1485,7 +1486,7 @@ async function getClientsSection(
 // stock movements so returns net out of it.
 export async function getInventorySnapshot(): Promise<InventoryAnalytics> {
   const today = startOfToday();
-  const in30Days = new Date(today.getTime() + 30 * DAY_MS);
+  const in30Days = new Date(today.getTime() + EXPIRING_SOON_DAYS * DAY_MS);
 
   const items = await prisma.inventoryItem.findMany({
     where: { deletedAt: null },

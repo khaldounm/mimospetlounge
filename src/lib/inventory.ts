@@ -2,13 +2,20 @@ import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ApiError } from "@/lib/api";
 import { toDateOnly } from "@/utils/format";
-import { INVENTORY_CATEGORIES } from "@/constants/inventory";
+import {
+  EXPIRING_SOON_DAYS,
+  INVENTORY_CATEGORIES,
+} from "@/constants/inventory";
 import { UNCATEGORISED, categorySlug } from "@/utils/inventory";
 import type {
   InventoryItemDTO,
   InventoryTransactionDTO,
 } from "@/types/entities";
-import { SIGNED_TX_TYPES, type InventoryTxType } from "@/types/enums";
+import {
+  SIGNED_TX_TYPES,
+  type InventoryExpiryFilter,
+  type InventoryTxType,
+} from "@/types/enums";
 
 // Shape returned by inventory item queries.
 type ItemRow = {
@@ -78,11 +85,17 @@ function effectiveExpiry(i: {
   return dated[0] ?? null;
 }
 
-function isExpired(expiryDate: Date | null): boolean {
-  if (!expiryDate) return false;
+// Midnight on the server's clock. The Expired chip and the expiry filter both
+// read it, so a row the filter returns always carries the chip.
+function startOfToday(): Date {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  return expiryDate.getTime() < today.getTime();
+  return today;
+}
+
+function isExpired(expiryDate: Date | null): boolean {
+  if (!expiryDate) return false;
+  return expiryDate.getTime() < startOfToday().getTime();
 }
 
 // `canSeeCost` is REQUIRED, not optional with a friendly default, and that is
@@ -528,6 +541,8 @@ export interface InventoryListQuery {
   category?: string;
   q?: string;
   lowStock?: boolean;
+  /** Past expiry, or expiring within EXPIRING_SOON_DAYS. */
+  expiry?: InventoryExpiryFilter;
   /** Supplier id, or "none" for items with no usual supplier yet. */
   supplier?: string;
   page?: number;
@@ -569,6 +584,52 @@ async function lowStockItemIds(): Promise<number[]> {
   return rows.map((r) => r.item_id);
 }
 
+/**
+ * Items judged on the same date the row shows (effectiveExpiry): a tracked
+ * item on its soonest dated batch still on the shelf, anything else on its own
+ * column. Only stock that is actually there is listed, since an empty shelf
+ * has nothing to pull or sell first.
+ *
+ * For a tracked item, "the soonest batch is past" is the same as "some open
+ * batch is past", which Prisma can say without a raw query. "Soon" also needs
+ * no open batch already past, or the item belongs under Expired.
+ */
+function expiryWhere(
+  filter: InventoryExpiryFilter,
+): Prisma.InventoryItemWhereInput {
+  const today = startOfToday();
+  const horizon = new Date(today);
+  horizon.setDate(horizon.getDate() + EXPIRING_SOON_DAYS);
+  const open = { quantity: { gt: 0 } };
+  const pastDue = { ...open, expiryDate: { lt: today } };
+
+  if (filter === "expired") {
+    return {
+      OR: [
+        {
+          tracksExpiry: false,
+          currentStock: { gt: 0 },
+          expiryDate: { lt: today },
+        },
+        { tracksExpiry: true, batches: { some: pastDue } },
+      ],
+    };
+  }
+  const upcoming = { gte: today, lte: horizon };
+  return {
+    OR: [
+      { tracksExpiry: false, currentStock: { gt: 0 }, expiryDate: upcoming },
+      {
+        tracksExpiry: true,
+        batches: {
+          some: { ...open, expiryDate: upcoming },
+          none: pastDue,
+        },
+      },
+    ],
+  };
+}
+
 function inventoryWhere(
   query: InventoryListQuery,
   lowStockIds: number[] | null,
@@ -608,6 +669,8 @@ function inventoryWhere(
     // "Low stock" only means something once a reorder level is configured,
     // matching isLowStock on the DTO.
     ...(lowStockIds ? { itemId: { in: lowStockIds } } : {}),
+    // Under AND because the text search above already owns the top-level OR.
+    ...(query.expiry ? { AND: [expiryWhere(query.expiry)] } : {}),
   };
 }
 
