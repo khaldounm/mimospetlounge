@@ -1189,6 +1189,78 @@ async function applyServiceLineTx(
   });
 }
 
+// Measure the whole invoice against the shelf before any stock moves, so a
+// shortfall names the items. Left to the DB CHECK alone, the oversell arrives
+// as a bare constraint error that says nothing about which line caused it.
+//
+// Totalled per item across every way issuing takes stock: sold, used in the
+// clinic, and consumed by a service's recipe. Two lines of the same item, or a
+// sale plus a service burning it, are one demand on one shelf. A return that
+// goes back on the shelf counts in its favour; one written off as damaged
+// leaves again straight away, so it does not.
+//
+// The CHECK (current_stock >= 0) still has the final say: another till can sell
+// the same item between this read and the writes, and that case falls through
+// to the generic message in issueInvoice's catch.
+async function assertStockCoversTx(
+  tx: Tx,
+  lines: {
+    itemId: number | null;
+    serviceId: number | null;
+    quantity: Prisma.Decimal;
+    returnRestock: boolean | null;
+    service: {
+      costComponents: {
+        itemId: number | null;
+        quantity: Prisma.Decimal | null;
+      }[];
+    } | null;
+  }[],
+): Promise<void> {
+  const taken = new Map<number, Prisma.Decimal>();
+  const restocked = new Map<number, Prisma.Decimal>();
+  const add = (
+    map: Map<number, Prisma.Decimal>,
+    itemId: number,
+    qty: Prisma.Decimal,
+  ) => map.set(itemId, (map.get(itemId) ?? D(0)).plus(qty));
+
+  for (const line of lines) {
+    if (line.serviceId != null && line.service != null) {
+      // A service given back puts nothing on the shelf (applyServiceLineTx).
+      if (line.quantity.lessThanOrEqualTo(0)) continue;
+      for (const c of line.service.costComponents) {
+        if (c.itemId == null || c.quantity == null) continue;
+        add(taken, c.itemId, c.quantity.times(line.quantity));
+      }
+      continue;
+    }
+    if (line.itemId == null) continue;
+    if (line.quantity.greaterThan(0)) {
+      add(taken, line.itemId, line.quantity);
+    } else if (line.returnRestock !== false) {
+      add(restocked, line.itemId, line.quantity.negated());
+    }
+  }
+  if (taken.size === 0) return;
+
+  const items = await tx.inventoryItem.findMany({
+    where: { itemId: { in: [...taken.keys()] } },
+    orderBy: { name: "asc" },
+    select: { itemId: true, name: true, currentStock: true },
+  });
+  const short = items.flatMap((i) => {
+    const need = taken.get(i.itemId)!;
+    const onShelf = i.currentStock.plus(restocked.get(i.itemId) ?? 0);
+    return need.greaterThan(onShelf)
+      ? [`"${i.name}" needs ${need}, ${onShelf} in stock`]
+      : [];
+  });
+  if (short.length > 0) {
+    throw new ApiError(409, `Not enough stock to issue: ${short.join("; ")}.`);
+  }
+}
+
 export async function issueInvoice(
   invoiceId: number,
   performedBy: number | null,
@@ -1265,6 +1337,8 @@ export async function issueInvoice(
           "A vet is still working on this invoice. Clear the hold, or issue it anyway if you have the authority.",
         );
       }
+
+      await assertStockCoversTx(tx, invoice.lineItems);
 
       // What each return line's original sale actually cost, so giving it back
       // takes the same figure off COGS that the sale put on. Resolved in one

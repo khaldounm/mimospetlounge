@@ -83,11 +83,13 @@ interface Props {
   item?: ItemLineOption;
   // Lines are only editable on a draft, and only by someone who can write.
   editable: boolean;
-  // Nothing left on the shelf for the item this line is selling. Decided by the
-  // invoice, which is the only thing that knows the stock figure is still worth
-  // reading: stock does not move until the invoice is issued, so on anything
-  // past a draft the count has already gone down and the warning would be a lie.
-  outOfStock?: boolean;
+  // Set only when the invoice sells more of this line's item than the shelf
+  // holds, and then it is what the shelf holds. Decided by the invoice, which
+  // is the only thing that sees every line drawing on the same item, and the
+  // only thing that knows the stock figure is still worth reading: stock does
+  // not move until the invoice is issued, so on anything past a draft the count
+  // has already gone down and the warning would be a lie.
+  inStock?: number;
   onSaved: (invoice: InvoiceDTO) => void;
   onDelete: () => void;
   onError: (message: string) => void;
@@ -125,14 +127,14 @@ export default function LineItemRow(props: Props) {
   );
 }
 
-function ReadOnlyRow({ line, outOfStock = false }: Props) {
+function ReadOnlyRow({ line, inStock }: Props) {
   const cols = lineItemColumnWidths(false);
   return (
-    <TableRow hover sx={rowSx(line, outOfStock)}>
+    <TableRow hover sx={rowSx(line, inStock != null)}>
       <TableCell sx={{ ...LINE_ITEM_CELL_SX, width: cols.description }}>
         <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
           <Box sx={{ flex: 1, minWidth: 0 }}>{line.description}</Box>
-          {outOfStock && <OutOfStockTag />}
+          {inStock != null && <ShortStockTag inStock={inStock} />}
           {line.isHidden && <ClinicUseTag />}
         </Stack>
       </TableCell>
@@ -157,14 +159,14 @@ function ReadOnlyRow({ line, outOfStock = false }: Props) {
 
 // Says what the orange means. Colour alone is a poor carrier for one fact in a
 // dense table, and it is the fact the counter has to act on.
-function OutOfStockTag() {
+function ShortStockTag({ inStock }: { inStock: number }) {
   return (
     <Typography
       variant="caption"
       color="warning.dark"
       sx={{ flexShrink: 0, whiteSpace: "nowrap", fontWeight: 600 }}
     >
-      No stock
+      {inStock > 0 ? `Only ${inStock} in stock` : "No stock"}
     </Typography>
   );
 }
@@ -206,7 +208,7 @@ function EditableRow({
   invoiceId,
   line,
   item,
-  outOfStock = false,
+  inStock,
   onSaved,
   onDelete,
   onError,
@@ -381,11 +383,11 @@ function EditableRow({
   ) : null;
 
   return (
-    <TableRow sx={rowSx(line, outOfStock)}>
+    <TableRow sx={rowSx(line, inStock != null)}>
       <TableCell sx={{ ...LINE_ITEM_CELL_SX, width: cols.description }}>
         <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
           <TextField {...fieldProps("description")} />
-          {outOfStock && <OutOfStockTag />}
+          {inStock != null && <ShortStockTag inStock={inStock} />}
         </Stack>
       </TableCell>
       <TableCell sx={{ ...LINE_ITEM_CELL_SX, width: cols.quantity }}>

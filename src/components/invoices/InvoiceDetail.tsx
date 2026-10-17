@@ -138,6 +138,21 @@ export default function InvoiceDetail({
     () => new Map(itemOptions.map((o) => [o.itemId, o])),
     [itemOptions],
   );
+  // How much of each item this invoice takes, totalled across its lines, so
+  // two lines of the same thing are measured against the shelf together. A
+  // return line is putting stock back, so it is not selling anything it does
+  // not have. Rounded to the 3 places a quantity carries, so summing 0.1 and
+  // 0.2 cannot land a hair over a shelf of 0.3.
+  const takenByItem = useMemo(() => {
+    const taken = new Map<number, number>();
+    for (const l of invoice.lineItems) {
+      const qty = Number(l.quantity);
+      if (l.itemId == null || qty <= 0) continue;
+      const sum = (taken.get(l.itemId) ?? 0) + qty;
+      taken.set(l.itemId, Math.round(sum * 1000) / 1000);
+    }
+    return taken;
+  }, [invoice.lineItems]);
   const cols = lineItemColumnWidths(canEditLines);
   // The client's whole-account balance, which spans every invoice they have and
   // not just this one. It rides on the invoice DTO now, because the printed
@@ -652,13 +667,16 @@ export default function InvoiceDetail({
                         // Only worth saying on a draft. Stock comes off the
                         // shelf at issue, so on an issued invoice every line
                         // that emptied a shelf would light up for a sale that
-                        // already went through. A return line is putting stock
-                        // back, so it is not selling anything it does not have.
-                        outOfStock={
+                        // already went through. Issuing refuses exactly these
+                        // lines, so they show before anyone presses Issue.
+                        inStock={
                           isDraft &&
                           item != null &&
-                          item.currentStock <= 0 &&
-                          Number(l.quantity) > 0
+                          Number(l.quantity) > 0 &&
+                          (takenByItem.get(item.itemId) ?? 0) >
+                            item.currentStock
+                            ? item.currentStock
+                            : undefined
                         }
                         editable={canEditLines}
                         onSaved={applyInvoice}
