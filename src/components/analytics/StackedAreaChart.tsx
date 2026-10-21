@@ -11,6 +11,10 @@ export interface StackedAreaSeries {
   id: string;
   label: string;
   data: number[];
+  // Pins the band's colour to what it shows. Without it a band takes its
+  // place in AREA_COLORS, which repaints the bands after it whenever a series
+  // is added or dropped.
+  color?: string;
 }
 
 // How much of the band's colour shows at the top of its wash, and at the
@@ -35,6 +39,8 @@ export default function StackedAreaChart({
 }) {
   const theme = useTheme();
   const colors = AREA_COLORS[theme.palette.mode];
+  const colorOf = (s: StackedAreaSeries, i: number) =>
+    s.color ?? colors[i % colors.length];
   // One gradient per band, ids scoped to this chart so two charts on the
   // same page cannot paint from each other's defs.
   const uid = useId().replace(/:/g, "");
@@ -57,7 +63,7 @@ export default function StackedAreaChart({
         id: s.id,
         label: s.label,
         data: s.data,
-        color: colors[i % colors.length],
+        color: colorOf(s, i),
         area: true,
         stack: "total",
         showMark: false,
@@ -74,7 +80,7 @@ export default function StackedAreaChart({
     >
       <defs>
         {series.map((s, i) => {
-          const color = colors[i % colors.length];
+          const color = colorOf(s, i);
           return (
             <linearGradient
               key={s.id}

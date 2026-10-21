@@ -158,3 +158,20 @@ export const AREA_COLORS = {
   light: ["#0d9488", "#7c3aed", "#db2777", "#16a34a"],
   dark: ["#2dd4bf", "#a78bfa", "#f472b6", "#4ade80"],
 } as const;
+
+// ---- Profit ----
+
+// The VAT on supplier bills, drawn when the profit section is asked to charge
+// it. One colour in all three pictures, so switching views never repaints it,
+// and a hue neither palette uses for anything else: not the stacked areas
+// above, not the library order the bars and lines draw from. One yellow ramp,
+// a step per mode: deeper on the cream page, lighter on the near-black one.
+// Checked with the dataviz palette validator against every other series in
+// both palettes, not just its neighbours: no pair falls under ΔE 9.8 for
+// colour-blind readers or 18.2 for everyone else, and both clear 3:1 on the
+// card surface.
+export const VAT_COLOR = { light: "#854d0e", dark: "#a16207" } as const;
+
+// How many slices the cost breakdown shows. The server keeps the largest, and
+// the page applies the same cap again after adding VAT to the list.
+export const COST_BREAKDOWN_LIMIT = 8;

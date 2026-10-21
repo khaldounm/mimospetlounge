@@ -764,7 +764,12 @@ export interface ProfitAnalytics {
   // already charged, so payouts are deliberately not read here.
   periodPartnerCost: number;
   periodCosts: number; // running (operating) costs incurred within the range
-  periodProfit: number; // revenue minus COGS minus partner earnings minus operating costs
+  // VAT on the supplier bills recognised in the range (billedOn, the date the
+  // Purchases section bills on). Never part of an item's cost, so COGS does not
+  // carry it. NOT subtracted from periodProfit or trend.profit: the page takes
+  // it off when the viewer turns VAT on, so both readings come from one fetch.
+  periodVat: number;
+  periodProfit: number; // revenue minus COGS minus partner earnings minus operating costs (VAT excluded, see periodVat)
   // Value of stock that left without being sold, over the range. Reported for
   // visibility and deliberately NOT subtracted from periodProfit: consumables
   // are expensed through running costs, so charging them here as well would
@@ -772,13 +777,14 @@ export interface ProfitAnalytics {
   periodClinicUse: number; // stock consumed in the clinic (Used movements)
   periodWriteOffs: number; // stock binned (Expired movements)
   // Bucketed over the range: collected revenue, COGS, partner earnings, operating
-  // costs, net profit.
+  // costs, supplier VAT, net profit (before VAT, as periodProfit).
   trend: {
     label: string;
     revenue: number;
     cogs: number;
     partnerCost: number;
     costs: number;
+    vat: number;
     profit: number;
   }[];
   byCategory: NamedValue[]; // costs split by category (incl. COGS + partner earnings) within the range
@@ -787,7 +793,9 @@ export interface ProfitAnalytics {
 // Cash out to suppliers. Deliberately separate from ProfitAnalytics and never
 // folded into it: the clinic recognises stock cost as COGS when the item sells,
 // so buying stock moves cash without touching profit. Adding purchases to the
-// profit figure would count the same stock twice.
+// profit figure would count the same stock twice. The VAT on those bills is
+// the one part profit can read (ProfitAnalytics.periodVat): it is never in an
+// item's cost, so COGS cannot have counted it already.
 export interface PurchasesAnalytics {
   periodBilled: number; // orders that became Received within the range
   periodPaid: number; // payments dated within the range

@@ -15,7 +15,7 @@ import { ChartsGrid } from "@mui/x-charts/ChartsGrid";
 import { ChartsReferenceLine } from "@mui/x-charts/ChartsReferenceLine";
 import { ChartsAxisHighlight } from "@mui/x-charts/ChartsAxisHighlight";
 import { rainbowSurgePalette } from "@mui/x-charts/colorPalettes";
-import type { ChartView } from "@/constants/analytics";
+import { AREA_COLORS, VAT_COLOR, type ChartView } from "@/constants/analytics";
 import { formatMoneyCompact } from "@/utils/format";
 import { CHART_HEIGHT, money } from "./AnalyticsPrimitives";
 import StackedAreaChart from "./StackedAreaChart";
@@ -26,10 +26,11 @@ type Trend = ProfitAnalytics["trend"];
 // One colour per entity, the same in every view, so switching the picture
 // never repaints what a colour meant. Taken from the library's own default
 // palette in the order the lines view assigns them, so the lines view looks
-// exactly as it always has.
+// exactly as it always has. VAT has a colour of its own, the same one the
+// stacked view draws it in.
 function seriesColors(mode: "light" | "dark") {
   const [revenue, cogs, partner, costs, profit] = rainbowSurgePalette(mode);
-  return { revenue, cogs, partner, costs, profit };
+  return { revenue, cogs, partner, costs, profit, vat: VAT_COLOR[mode] };
 }
 
 // Money in as one bar, money out stacked downward under it in its three
@@ -41,7 +42,13 @@ function seriesColors(mode: "light" | "dark") {
 //
 // Costs are plotted as negatives so they hang below the axis, and formatted
 // back to positive in the tooltip, which is how a cost is read.
-function ProfitBreakdownBars({ trend }: { trend: Trend }) {
+function ProfitBreakdownBars({
+  trend,
+  showVat,
+}: {
+  trend: Trend;
+  showVat: boolean;
+}) {
   const theme = useTheme();
   const colors = seriesColors(theme.palette.mode);
   const cost = (v: number | null) => money(v == null ? 0 : -v);
@@ -88,6 +95,20 @@ function ProfitBreakdownBars({ trend }: { trend: Trend }) {
           color: colors.costs,
           valueFormatter: cost,
         },
+        ...(showVat
+          ? [
+              {
+                type: "bar" as const,
+                id: "vat",
+                label: "VAT on purchases",
+                data: trend.map((t) => -t.vat),
+                stack: "out",
+                stackOffset: "diverging" as const,
+                color: colors.vat,
+                valueFormatter: cost,
+              },
+            ]
+          : []),
         {
           type: "line",
           id: "profit",
@@ -140,27 +161,60 @@ function ProfitBreakdownBars({ trend }: { trend: Trend }) {
 }
 
 // Where each day's revenue went, as stacked areas: COGS, partner earnings,
-// operating costs and net profit piled on top of each other, so the top edge
-// of the stack IS the revenue and each band is the slice of it that went that
-// way. Everything is in the tooltip, so no extra revenue line is drawn over a
-// shape that already says it.
-function ProfitBreakdownStacked({ trend }: { trend: Trend }) {
+// operating costs, VAT when it is counted, and net profit piled on top of each
+// other, so the top edge of the stack IS the revenue and each band is the
+// slice of it that went that way. Everything is in the tooltip, so no extra
+// revenue line is drawn over a shape that already says it.
+//
+// Each band names its colour, because VAT comes and goes from the middle of
+// the pile and would otherwise push net profit onto another band's colour.
+function ProfitBreakdownStacked({
+  trend,
+  showVat,
+}: {
+  trend: Trend;
+  showVat: boolean;
+}) {
+  const mode = useTheme().palette.mode;
+  const [cogs, partner, costs, profit] = AREA_COLORS[mode];
   return (
     <StackedAreaChart
       labels={trend.map((t) => t.label)}
       series={[
-        { id: "cogs", label: "COGS", data: trend.map((t) => t.cogs) },
+        {
+          id: "cogs",
+          label: "COGS",
+          data: trend.map((t) => t.cogs),
+          color: cogs,
+        },
         {
           id: "partner",
           label: "Partner earnings",
           data: trend.map((t) => t.partnerCost),
+          color: partner,
         },
         {
           id: "costs",
           label: "Operating costs",
           data: trend.map((t) => t.costs),
+          color: costs,
         },
-        { id: "profit", label: "Net profit", data: trend.map((t) => t.profit) },
+        ...(showVat
+          ? [
+              {
+                id: "vat",
+                label: "VAT on purchases",
+                data: trend.map((t) => t.vat),
+                color: VAT_COLOR[mode],
+              },
+            ]
+          : []),
+        {
+          id: "profit",
+          label: "Net profit",
+          data: trend.map((t) => t.profit),
+          color: profit,
+        },
       ]}
       valueFormatter={(v) => money(v)}
       axisFormatter={(v) => formatMoneyCompact(v)}
@@ -168,8 +222,16 @@ function ProfitBreakdownStacked({ trend }: { trend: Trend }) {
   );
 }
 
-// The five-line chart the section opened with, as it is on prod.
-function ProfitBreakdownLines({ trend }: { trend: Trend }) {
+// The five-line chart the section opened with, as it is on prod, plus VAT when
+// it is counted. Colours are named for the same reason as the stacked view.
+function ProfitBreakdownLines({
+  trend,
+  showVat,
+}: {
+  trend: Trend;
+  showVat: boolean;
+}) {
+  const colors = seriesColors(useTheme().palette.mode);
   return (
     <LineChart
       height={CHART_HEIGHT}
@@ -178,26 +240,41 @@ function ProfitBreakdownLines({ trend }: { trend: Trend }) {
         {
           data: trend.map((t) => t.revenue),
           label: "Revenue",
+          color: colors.revenue,
           valueFormatter: (v) => money(v),
         },
         {
           data: trend.map((t) => t.cogs),
           label: "COGS",
+          color: colors.cogs,
           valueFormatter: (v) => money(v),
         },
         {
           data: trend.map((t) => t.partnerCost),
           label: "Partner earnings",
+          color: colors.partner,
           valueFormatter: (v) => money(v),
         },
         {
           data: trend.map((t) => t.costs),
           label: "Operating costs",
+          color: colors.costs,
           valueFormatter: (v) => money(v),
         },
+        ...(showVat
+          ? [
+              {
+                data: trend.map((t) => t.vat),
+                label: "VAT on purchases",
+                color: colors.vat,
+                valueFormatter: (v: number | null) => money(v),
+              },
+            ]
+          : []),
         {
           data: trend.map((t) => t.profit),
           label: "Net profit",
+          color: colors.profit,
           valueFormatter: (v) => money(v),
         },
       ]}
@@ -208,11 +285,17 @@ function ProfitBreakdownLines({ trend }: { trend: Trend }) {
 export default function ProfitBreakdownChart({
   trend,
   view,
+  showVat,
 }: {
   trend: Trend;
   view: ChartView;
+  // Draws VAT as a cost of its own. The trend's profit must already have it
+  // taken off (withPurchaseVat), or the pile no longer adds up to revenue.
+  showVat: boolean;
 }) {
-  if (view === "bars") return <ProfitBreakdownBars trend={trend} />;
-  if (view === "stacked") return <ProfitBreakdownStacked trend={trend} />;
-  return <ProfitBreakdownLines trend={trend} />;
+  if (view === "bars")
+    return <ProfitBreakdownBars trend={trend} showVat={showVat} />;
+  if (view === "stacked")
+    return <ProfitBreakdownStacked trend={trend} showVat={showVat} />;
+  return <ProfitBreakdownLines trend={trend} showVat={showVat} />;
 }

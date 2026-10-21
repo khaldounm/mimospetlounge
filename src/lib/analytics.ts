@@ -20,6 +20,7 @@ import {
   CATEGORY_GROUPS,
   CATEGORY_TOP_LIMIT,
   CLIENT_LIST_LIMIT,
+  COST_BREAKDOWN_LIMIT,
   COUNTER_SALE_LEGACY_CLIENT_ID,
   GROOMING_SERVICE_CATEGORY,
   ITEM_SEARCH_LIMIT,
@@ -293,6 +294,11 @@ async function getRevenueSection(
 // paid for it: the clinic's share of the cost lands in COGS, the partner's in
 // their payout. Which is which comes from the frozen costPart on the movement,
 // never from the presence of a partner.
+//
+// The VAT on supplier bills comes back beside the profit, never inside it. An
+// item's cost is what the bill says before VAT, so COGS never carries it, and
+// a clinic that cannot claim it back is short by that much. The page takes it
+// off when asked to, on the date of each bill rather than when the stock sells.
 async function getProfitSection(
   range: AnalyticsRange,
 ): Promise<ProfitAnalytics> {
@@ -310,6 +316,7 @@ async function getProfitSection(
     accrualRows,
     paymentRows,
     unsoldRows,
+    vatRows,
   ] = await Promise.all([
     prisma.runningCost.aggregate({
       _sum: { amount: true },
@@ -333,7 +340,7 @@ async function getProfitSection(
       },
       _sum: { amount: true },
       orderBy: { _sum: { amount: "desc" } },
-      take: 8,
+      take: COST_BREAKDOWN_LIMIT,
     }),
     // Sold movements carry the frozen unit cost; COGS = |qty| * unitCost. Giving
     // a sale back writes a Returned movement (referenceType "invoice") carrying
@@ -406,6 +413,20 @@ async function getProfitSection(
       },
       select: { type: true, quantity: true, unitCost: true },
     }),
+    // Supplier VAT, summed per bill date in the database, so a year comes back
+    // as one row per day that had a bill rather than one per order. Billed the
+    // way the Purchases section bills: on the date the order reached Received,
+    // which is when the clinic owes it.
+    prisma.purchaseOrder.groupBy({
+      by: ["billedOn"],
+      where: {
+        deletedAt: null,
+        status: "Received",
+        billedOn: { gte: dateFrom, lt: dateToExclusive },
+        taxAmount: { gt: 0 },
+      },
+      _sum: { taxAmount: true },
+    }),
   ]);
 
   const costMap = zeroMap(buckets);
@@ -461,6 +482,17 @@ async function getProfitSection(
     );
   }
 
+  const vatMap = zeroMap(buckets);
+  for (const row of vatRows) {
+    // Never null here, the range filter excludes it; the type cannot know that.
+    if (!row.billedOn) continue;
+    addTo(
+      vatMap,
+      bucketKeyOf(row.billedOn, granularity),
+      row._sum.taxAmount?.toNumber() ?? 0,
+    );
+  }
+
   const trend = buckets.map((b) => {
     const revenue = round2(revenueMap.get(b.key) ?? 0);
     const cogs = round2(cogsMap.get(b.key) ?? 0);
@@ -472,6 +504,7 @@ async function getProfitSection(
       cogs,
       partnerCost,
       costs,
+      vat: round2(vatMap.get(b.key) ?? 0),
       profit: round2(revenue - cogs - partnerCost - costs),
     };
   });
@@ -491,7 +524,7 @@ async function getProfitSection(
   if (partnerTotal > 0)
     byCategory.push({ label: "Partner earnings", value: partnerTotal });
   byCategory.sort((a, b) => b.value - a.value);
-  byCategory.splice(8);
+  byCategory.splice(COST_BREAKDOWN_LIMIT);
 
   const periodRevenue = round2(
     paymentRows.reduce((s, p) => s + p.amount.toNumber(), 0),
@@ -518,6 +551,7 @@ async function getProfitSection(
     periodCogs: cogsTotal,
     periodPartnerCost: partnerTotal,
     periodCosts,
+    periodVat: round2([...vatMap.values()].reduce((s, v) => s + v, 0)),
     periodProfit,
     periodClinicUse: round2(clinicUse),
     periodWriteOffs: round2(writeOffs),

@@ -46,7 +46,16 @@ export function KpiCard({
   );
 }
 
-export function KpiGrid({ children }: { children: React.ReactNode }) {
+// Five cards to a row from a laptop up. A row of six (profit, once VAT joins
+// it) passes columns={6}: two rows of three until the screen is wide enough
+// for six figures side by side.
+export function KpiGrid({
+  children,
+  columns = 5,
+}: {
+  children: React.ReactNode;
+  columns?: 5 | 6;
+}) {
   return (
     <Box
       sx={{
@@ -55,7 +64,9 @@ export function KpiGrid({ children }: { children: React.ReactNode }) {
         gridTemplateColumns: {
           xs: "repeat(2, 1fr)",
           sm: "repeat(3, 1fr)",
-          md: "repeat(5, 1fr)",
+          ...(columns === 6
+            ? { md: "repeat(3, 1fr)", lg: "repeat(6, 1fr)" }
+            : { md: "repeat(5, 1fr)" }),
         },
       }}
     >
